@@ -50,8 +50,6 @@ pub fn main() !void {
     rl.SetWindowPosition(0, 0);
 
     const vel: i32 = 2; // pixels per frame
-    // integer pixel issues
-    // need to be careful with the diagonal speed issue
 
     const centerX: i32 = screenWidth / 2;
     const centerY: i32 = screenHeight / 2;
@@ -89,23 +87,30 @@ pub fn main() !void {
         const gridSquare = getSquareInGrid(gridSize, clickedPt.x, clickedPt.y);
         const gridSquareCenter = .{ .x = gridSquare.x + @divFloor(gridSize, 2), .y = gridSquare.y + @divFloor(gridSize, 2) };
 
-        if (agentPt.x < gridSquareCenter.x) {
-            agentPt.x += vel;
-        } else if (agentPt.x > gridSquareCenter.x) {
-            agentPt.x -= vel;
+        const freezeThreshold: i32 = 2;
+
+        // bad naive pathing
+        if (@abs(agentPt.x - gridSquareCenter.x) > freezeThreshold) {
+            if (agentPt.x < gridSquareCenter.x) {
+                agentPt.x += vel;
+            } else if (agentPt.x > gridSquareCenter.x) {
+                agentPt.x -= vel;
+            }
         }
 
-        if (agentPt.y < gridSquareCenter.y) {
-            agentPt.y += vel;
-        } else if (agentPt.y > gridSquareCenter.y) {
-            agentPt.y -= vel;
+        if (@abs(agentPt.y - gridSquareCenter.y) > freezeThreshold) {
+            if (agentPt.y < gridSquareCenter.y) {
+                agentPt.y += vel;
+            } else if (agentPt.y > gridSquareCenter.y) {
+                agentPt.y -= vel;
+            }
         }
 
         rl.DrawRectangle(gridSquare.x, gridSquare.y, gridSize, gridSize, rl.GREEN);
 
         printGrid(gridSize, 0, @max(screenWidth, screenHeight));
 
-        // rl.DrawCircle(clickedPt.x, clickedPt.y, 5, rl.LIGHTGRAY);
+        // rl.DrawCircle(clickedPt.x, clickedPt.y, 3, rl.LIGHTGRAY);
         rl.DrawCircle(agentPt.x, agentPt.y, 10, rl.RED);
     }
 }
