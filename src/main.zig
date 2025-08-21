@@ -64,9 +64,15 @@ pub fn main() !void {
     std.debug.assert(@mod(gridSize, 2) == 0);
     std.debug.assert(@mod(gridChange, 2) == 0);
 
-    while (!rl.WindowShouldClose()) {
+    var end = false;
+    while (!end and !rl.WindowShouldClose()) {
+        if (rl.IsKeyDown(rl.KEY_W) and rl.IsKeyDown(rl.KEY_LEFT_SUPER)) {
+            end = true;
+        }
+
         rl.BeginDrawing();
         defer rl.EndDrawing();
+
         rl.ClearBackground(rl.RAYWHITE);
 
         // scale grid
