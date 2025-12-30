@@ -124,7 +124,8 @@ pub fn main() !void {
     const centerX: i32 = screenWidth / 2;
     const centerY: i32 = screenHeight / 2;
 
-    // consider creating a struct for this
+    const agentSpeed: f32 = 200;
+
     var clickedPt: ScreenPos = .{ .x = centerX, .y = centerY };
     var agentPt: ScreenPos = .{ .x = centerX, .y = centerY };
 
@@ -132,6 +133,9 @@ pub fn main() !void {
     const gridChange: i32 = 10;
 
     agentPt = getSquareCenter(gridSize, getSquareInGrid(gridSize, clickedPt));
+
+    var path: ?std.ArrayList(ScreenPos) = null;
+    var previousTarget = agentPt;
 
     std.debug.assert(@mod(gridSize, 2) == 0);
     std.debug.assert(@mod(gridChange, 2) == 0);
@@ -165,15 +169,54 @@ pub fn main() !void {
         const gridSquare = getSquareInGrid(gridSize, clickedPt);
         const gridSquareCenter = getSquareCenter(gridSize, gridSquare);
 
-        var path = try getPath(agentPt, gridSquareCenter, gridSize, &crossDiagonalMovement, allocator);
+        // add logic to only draw path if target is different
+        // if target is same, start moving along path
+        if (!std.meta.eql(gridSquareCenter, previousTarget)) {
+            if (path) |*p| p.deinit(allocator);
+            const agentSquare = getSquareInGrid(gridSize, agentPt);
+            agentPt = getSquareCenter(gridSize, agentSquare);
+            path = try getPath(agentPt, gridSquareCenter, gridSize, &crossDiagonalMovement, allocator);
+            _ = path.?.orderedRemove(0);
+            previousTarget = gridSquareCenter;
+        }
+
+        if (path) |*p| {
+            if (p.items.len > 0) {
+                const deltaTime = rl.GetFrameTime();
+                const nextPoint = p.items[0];
+                const dx: f32 = @floatFromInt(nextPoint.x - agentPt.x);
+                const dy: f32 = @floatFromInt(nextPoint.y - agentPt.y);
+                const distance = std.math.sqrt(dx * dx + dy * dy);
+
+                if (distance > 0) {
+                    const moveAmount = agentSpeed * deltaTime;
+                    if (moveAmount >= distance) {
+                        agentPt = nextPoint;
+                        _ = p.orderedRemove(0);
+                        if (p.items.len == 0) {
+                            p.deinit(allocator);
+                            path = null;
+                        }
+                    } else {
+                        const ratio = moveAmount / distance;
+                        agentPt.x += @as(i32, @intFromFloat(dx * ratio));
+                        agentPt.y += @as(i32, @intFromFloat(dy * ratio));
+                    }
+                }
+            }
+        }
 
         rl.DrawRectangle(gridSquare.x, gridSquare.y, gridSize, gridSize, rl.GREEN);
 
         printGrid(gridSize, 0, @max(screenWidth, screenHeight));
-        drawPathLines(path.items);
-        path.deinit(allocator);
+
+        if (path) |*p| {
+            drawPathLines(p.items);
+        }
 
         // rl.DrawCircle(clickedPt.x, clickedPt.y, 3, rl.LIGHTGRAY);
         rl.DrawCircle(agentPt.x, agentPt.y, 10, rl.RED);
     }
+
+    if (path) |*p| p.deinit(allocator);
 }
