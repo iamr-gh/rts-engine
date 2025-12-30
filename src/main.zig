@@ -69,16 +69,17 @@ fn getPath(start: ScreenPos, end: ScreenPos, gridSize: i32, movement: []const [2
     std.debug.assert(@mod(end.x, gridSize) == @divFloor(gridSize, 2));
     std.debug.assert(@mod(end.y, gridSize) == @divFloor(gridSize, 2));
 
-    var pathList = std.ArrayList(ScreenPos).init(allocator);
+    var pathList = std.ArrayList(ScreenPos).empty;
     var current = start;
     var next = start;
     const maxLen = 20; // good idea long term, one method over retiling
+
     // greedy algorithm, can get stuck in local minima with obstacles
     while (!std.meta.eql(current, end)) {
         if (pathList.items.len > maxLen) {
             break;
         }
-        try pathList.append(current);
+        try pathList.append(allocator, current);
 
         // pick the best movement
         var bestMovement = movement[0];
@@ -96,7 +97,7 @@ fn getPath(start: ScreenPos, end: ScreenPos, gridSize: i32, movement: []const [2
         next.y += bestMovement[1] * gridSize;
         current = next;
     }
-    try pathList.append(end);
+    try pathList.append(allocator, end);
 
     return pathList;
 }
@@ -164,12 +165,13 @@ pub fn main() !void {
         const gridSquare = getSquareInGrid(gridSize, clickedPt);
         const gridSquareCenter = getSquareCenter(gridSize, gridSquare);
 
-        const path = try getPath(agentPt, gridSquareCenter, gridSize, &crossDiagonalMovement, allocator);
+        var path = try getPath(agentPt, gridSquareCenter, gridSize, &crossDiagonalMovement, allocator);
 
         rl.DrawRectangle(gridSquare.x, gridSquare.y, gridSize, gridSize, rl.GREEN);
 
         printGrid(gridSize, 0, @max(screenWidth, screenHeight));
         drawPathLines(path.items);
+        path.deinit(allocator);
 
         // rl.DrawCircle(clickedPt.x, clickedPt.y, 3, rl.LIGHTGRAY);
         rl.DrawCircle(agentPt.x, agentPt.y, 10, rl.RED);

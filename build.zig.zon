@@ -28,7 +28,7 @@
 
     // Tracks the earliest Zig version that the package considers to be a
     // supported use case.
-    .minimum_zig_version = "0.14.0",
+    .minimum_zig_version = "0.15.0",
 
     // This field is optional.
     // Each dependency must either provide a `url` and `hash`, or a `path`.
@@ -37,8 +37,8 @@
     // internet connectivity.
     .dependencies = .{
         .raylib = .{
-            .url = "git+https://github.com/raysan5/raylib#2e652bbef11e6be8eb7d9fad431d6f02d072bc67",
-            .hash = "raylib-5.5.0-whq8uFSIWgSXOECu9sSl4Dw6xaSLyCaNvfyk77jFyRoL",
+            .url = "git+https://github.com/CashWasabi/raylib#566eb34ff899e6a5010ab18443c4ed2f3a5add57",
+            .hash = "raylib-5.5.0-whq8uAhIxwRfZmWUmaBTel3p6lyO5Ki4k53dGpx91b2D",
         },
     },
     .paths = .{
