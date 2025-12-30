@@ -21,11 +21,11 @@ const GridCoord = struct {
 };
 
 const ObstacleGrid = struct {
-    obstacles: std.AutoHashMap(GridCoord, void),
+    obstacles: std.AutoHashMap(GridCoord, i32),
 
     fn init(allocator: std.mem.Allocator) ObstacleGrid {
         return .{
-            .obstacles = std.AutoHashMap(GridCoord, void).init(allocator),
+            .obstacles = std.AutoHashMap(GridCoord, i32).init(allocator),
         };
     }
 
@@ -34,7 +34,8 @@ const ObstacleGrid = struct {
     }
 
     fn add(self: *ObstacleGrid, coord: GridCoord) !void {
-        try self.obstacles.put(coord, {});
+        const val = (self.obstacles.get(coord) orelse 0) + 1;
+        try self.obstacles.put(coord, val);
     }
 
     fn remove(self: *ObstacleGrid, coord: GridCoord) void {
@@ -42,10 +43,17 @@ const ObstacleGrid = struct {
     }
 
     fn toggle(self: *ObstacleGrid, coord: GridCoord) !void {
-        if (self.obstacles.fetchRemove(coord)) |_| {
-            // was there, now removed
+        const maxHeight: i32 = 2;
+
+        // oscillate between 0, 1, 2
+        if (self.obstacles.get(coord)) |height| {
+            if (height == 1) {
+                _ = self.obstacles.remove(coord);
+            } else {
+                try self.obstacles.put(coord, height - 1);
+            }
         } else {
-            try self.obstacles.put(coord, {});
+            try self.obstacles.put(coord, maxHeight);
         }
     }
 
@@ -75,6 +83,11 @@ fn generateRandomObstacles(allocator: std.mem.Allocator, gridSize: i32, screenWi
 
             if (std.meta.eql(center, excludePos)) continue;
 
+            // multiple layers of terrain
+            if (random.float(f32) < 0.3) {
+                try obstacleGrid.add(.{ .x = @as(i32, @intCast(col)), .y = @as(i32, @intCast(row)) });
+            }
+
             if (random.float(f32) < 0.3) {
                 try obstacleGrid.add(.{ .x = @as(i32, @intCast(col)), .y = @as(i32, @intCast(row)) });
             }
@@ -82,6 +95,15 @@ fn generateRandomObstacles(allocator: std.mem.Allocator, gridSize: i32, screenWi
     }
 
     return obstacleGrid;
+}
+
+fn screenToGridCoord(screenPos: ScreenPos, gridSize: i32) GridCoord {
+    const gridSquare = getSquareInGrid(gridSize, screenPos);
+    const coord = GridCoord{
+        .x = @divFloor(gridSquare.x, gridSize),
+        .y = @divFloor(gridSquare.y, gridSize),
+    };
+    return coord;
 }
 
 fn isObstacle(obstacleGrid: *const ObstacleGrid, screenPos: ScreenPos, gridSize: i32) bool {
@@ -122,7 +144,11 @@ fn drawObstacles(obstacleGrid: *const ObstacleGrid, gridSize: i32) void {
         const coord = entry.key_ptr.*;
         const x = coord.x * gridSize;
         const y = coord.y * gridSize;
-        rl.DrawRectangle(x, y, gridSize, gridSize, rl.DARKGRAY);
+        if (entry.value_ptr.* == 1) {
+            rl.DrawRectangle(x, y, gridSize, gridSize, rl.GRAY);
+        } else if (entry.value_ptr.* == 2) {
+            rl.DrawRectangle(x, y, gridSize, gridSize, rl.DARKGRAY);
+        }
     }
 }
 
@@ -237,7 +263,7 @@ fn getPathAstar(start: ScreenPos, end: ScreenPos, gridSize: i32, movement: []con
     try gScore.put(start, 0);
     try fScore.put(start, getScore(start, end));
 
-    const max_iters: usize = 100;
+    const max_iters: usize = 10000;
     var iters: usize = 0;
 
     while (openSet.items.len > 0 and iters < max_iters) {
@@ -275,8 +301,14 @@ fn getPathAstar(start: ScreenPos, end: ScreenPos, gridSize: i32, movement: []con
                 .y = current.y + move[1] * gridSize,
             };
 
-            if (isObstacle(obstacleGrid, neighbor, gridSize)) continue;
+            // can only move between squares that are within 1 heigh of the current square
+            const neigh_height = obstacleGrid.obstacles.get(screenToGridCoord(neighbor, gridSize)) orelse 0;
+            const height = obstacleGrid.obstacles.get(screenToGridCoord(current, gridSize)) orelse 0;
+            if (@abs(height - neigh_height) > 1) continue;
 
+            // if (isObstacle(obstacleGrid, neighbor, gridSize)) continue;
+
+            // this rule needs to be revisited
             if (!canMoveDiagonal(current, neighbor, gridSize, obstacleGrid)) continue;
 
             const neighborSquare = getSquareInGrid(gridSize, neighbor);
@@ -411,14 +443,14 @@ pub fn main() !void {
             if (path) |*p| p.deinit(allocator);
             const agentSquare = getSquareInGrid(gridSize, agentPt);
             agentPt = getSquareCenter(gridSize, agentSquare);
-            if (isObstacle(&obstacleGrid, gridSquareCenter, gridSize)) {
-                path = null;
-            } else {
-                path = getPathAstar(agentPt, gridSquareCenter, gridSize, &crossDiagonalMovement, &obstacleGrid, allocator) catch null;
-                if (path) |*p| {
-                    if (p.items.len > 0) _ = p.orderedRemove(0);
-                }
+            // if (isObstacle(&obstacleGrid, gridSquareCenter, gridSize)) {
+            //     path = null;
+            // } else {
+            path = getPathAstar(agentPt, gridSquareCenter, gridSize, &crossDiagonalMovement, &obstacleGrid, allocator) catch null;
+            if (path) |*p| {
+                if (p.items.len > 0) _ = p.orderedRemove(0);
             }
+            // }
             previousTarget = gridSquareCenter;
         }
 
