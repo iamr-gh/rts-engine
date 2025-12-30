@@ -75,7 +75,7 @@ fn generateRandomObstacles(allocator: std.mem.Allocator, gridSize: i32, screenWi
 
             if (std.meta.eql(center, excludePos)) continue;
 
-            if (random.float(f32) < 0.2) {
+            if (random.float(f32) < 0.3) {
                 try obstacleGrid.add(.{ .x = @as(i32, @intCast(col)), .y = @as(i32, @intCast(row)) });
             }
         }
@@ -237,7 +237,11 @@ fn getPathAstar(start: ScreenPos, end: ScreenPos, gridSize: i32, movement: []con
     try gScore.put(start, 0);
     try fScore.put(start, getScore(start, end));
 
-    while (openSet.items.len > 0) {
+    const max_iters: usize = 100;
+    var iters: usize = 0;
+
+    while (openSet.items.len > 0 and iters < max_iters) {
+        iters += 1;
         var currentIdx: usize = 0;
         var minF: u32 = std.math.maxInt(u32);
 
