@@ -4,7 +4,7 @@ pub const rl = @cImport({
     @cInclude("rlgl.h");
 });
 
-const types = @import("types.zig");
+const types = @import("../types.zig");
 const ScreenPos = types.ScreenPos;
 
 pub fn printGrid(inc: i32, start: i32, end: i32) void {

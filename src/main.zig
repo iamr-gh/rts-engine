@@ -1,8 +1,9 @@
 const std = @import("std");
 const types = @import("types.zig");
-const grid = @import("grid.zig");
-const map = @import("map.zig");
+const grid = @import("map/grid.zig");
+const map = @import("map/map.zig");
 const pathfinding = @import("pathfinding.zig");
+const selection = @import("selection.zig");
 
 const rl = grid.rl;
 const ScreenPos = types.ScreenPos;
@@ -27,20 +28,23 @@ pub fn main() !void {
     const centerX: i32 = screenWidth / 2;
     const centerY: i32 = screenHeight / 2;
 
-    const agentSpeed: f32 = 200;
+    // pixels per second
+    const agentSpeed: f32 = 150;
 
-    var clickedPt: ScreenPos = .{ .x = centerX, .y = centerY };
+    // const NUM_AGENTS: i32 = 2;
+
+    var goalPt: ScreenPos = .{ .x = centerX, .y = centerY };
     var agentPt: ScreenPos = .{ .x = centerX, .y = centerY };
 
-    var gridSize: i32 = 50;
+    var gridSize: i32 = 6;
     const gridChange: i32 = 10;
 
-    agentPt = grid.getSquareCenter(gridSize, grid.getSquareInGrid(gridSize, clickedPt));
+    agentPt = grid.getSquareCenter(gridSize, grid.getSquareInGrid(gridSize, goalPt));
 
     var path: ?std.ArrayList(ScreenPos) = null;
     var previousTarget = agentPt;
 
-    var obstacleGrid = try map.generateRandomObstacles(allocator, gridSize, screenWidth, screenHeight, agentPt);
+    var obstacleGrid = try map.generateTerrainObstacles(allocator, gridSize, screenWidth, screenHeight, agentPt);
     var prevGridSize = gridSize;
 
     std.debug.assert(@mod(gridSize, 2) == 0);
@@ -48,12 +52,12 @@ pub fn main() !void {
 
     var end = false;
     while (!end and !rl.WindowShouldClose()) {
+        rl.BeginDrawing();
+        defer rl.EndDrawing();
+
         if (rl.IsKeyDown(rl.KEY_W) and rl.IsKeyDown(rl.KEY_LEFT_SUPER)) {
             end = true;
         }
-
-        rl.BeginDrawing();
-        defer rl.EndDrawing();
 
         rl.ClearBackground(rl.RAYWHITE);
 
@@ -67,52 +71,36 @@ pub fn main() !void {
 
         if (gridSize != prevGridSize) {
             obstacleGrid.deinit();
-            obstacleGrid = try map.generateRandomObstacles(allocator, gridSize, screenWidth, screenHeight, agentPt);
+            obstacleGrid = try map.generateTerrainObstacles(allocator, gridSize, screenWidth, screenHeight, agentPt);
             if (path) |*p| p.deinit(allocator);
             path = null;
             prevGridSize = gridSize;
         }
 
-        if (rl.IsMouseButtonPressed(rl.MOUSE_LEFT_BUTTON)) {
-            clickedPt.x = rl.GetMouseX();
-            clickedPt.y = rl.GetMouseY();
-        }
-
-        const gridSquare = grid.getSquareInGrid(gridSize, clickedPt);
-        const gridSquareCenter = grid.getSquareCenter(gridSize, gridSquare);
-
+        // pathing to goal
         if (rl.IsMouseButtonPressed(rl.MOUSE_RIGHT_BUTTON)) {
-            const mousePos: ScreenPos = .{ .x = rl.GetMouseX(), .y = rl.GetMouseY() };
-            const rightGridSquare = grid.getSquareInGrid(gridSize, mousePos);
-            const coord = GridCoord{
-                .x = @divFloor(rightGridSquare.x, gridSize),
-                .y = @divFloor(rightGridSquare.y, gridSize),
-            };
-            try obstacleGrid.toggle(coord);
-            if (!map.isObstacle(&obstacleGrid, gridSquareCenter, gridSize)) {
-                if (path) |*p| p.deinit(allocator);
-                path = pathfinding.getPathAstar(agentPt, gridSquareCenter, gridSize, &pathfinding.crossDiagonalMovement, &obstacleGrid, allocator) catch null;
-                if (path) |*p| {
-                    if (p.items.len > 0) _ = p.orderedRemove(0);
-                }
-            }
+            goalPt.x = rl.GetMouseX();
+            goalPt.y = rl.GetMouseY();
         }
 
-        if (map.isObstacle(&obstacleGrid, gridSquareCenter, gridSize)) {
-            rl.DrawRectangle(gridSquare.x, gridSquare.y, gridSize, gridSize, rl.RED);
+        const goalSquare = grid.getSquareInGrid(gridSize, goalPt);
+        const goalSquareCenter = grid.getSquareCenter(gridSize, goalSquare);
+
+        if (map.isObstacle(&obstacleGrid, goalSquareCenter, gridSize)) {
+            rl.DrawRectangle(goalSquare.x, goalSquare.y, gridSize, gridSize, rl.RED);
         } else {
-            rl.DrawRectangle(gridSquare.x, gridSquare.y, gridSize, gridSize, rl.GREEN);
+            rl.DrawRectangle(goalSquare.x, goalSquare.y, gridSize, gridSize, rl.GREEN);
         }
 
-        if (!std.meta.eql(gridSquareCenter, previousTarget)) {
+        if (!std.meta.eql(goalSquareCenter, previousTarget)) {
             if (path) |*p| p.deinit(allocator);
             const agentSquare = grid.getSquareInGrid(gridSize, agentPt);
             agentPt = grid.getSquareCenter(gridSize, agentSquare);
-            path = pathfinding.getPathAstar(agentPt, gridSquareCenter, gridSize, &pathfinding.crossDiagonalMovement, &obstacleGrid, allocator) catch null;
+            path = pathfinding.getPathAstar(agentPt, goalSquareCenter, gridSize, &pathfinding.crossDiagonalMovement, &obstacleGrid, allocator) catch null;
             if (path) |*p| {
                 if (p.items.len > 0) _ = p.orderedRemove(0);
             }
-            previousTarget = gridSquareCenter;
+            previousTarget = goalSquareCenter;
         }
 
         if (path) |*p| {
@@ -149,7 +137,7 @@ pub fn main() !void {
             pathfinding.drawPathLines(p.items);
         }
 
-        rl.DrawCircle(agentPt.x, agentPt.y, 10, rl.RED);
+        rl.DrawCircle(agentPt.x, agentPt.y, 5, rl.RED);
     }
 
     obstacleGrid.deinit();

@@ -1,7 +1,7 @@
 const std = @import("std");
 const types = @import("types.zig");
-const grid = @import("grid.zig");
-const map = @import("map.zig");
+const grid = @import("map/grid.zig");
+const map = @import("map/map.zig");
 pub const rl = @cImport({
     @cInclude("raylib.h");
     @cInclude("raymath.h");
@@ -123,6 +123,7 @@ pub fn getPathAstar(start: ScreenPos, end: ScreenPos, gridSize: i32, movement: [
             };
 
             const neigh_height = obstacleGrid.obstacles.get(map.screenToGridCoord(neighbor, gridSize)) orelse 0;
+            if (neigh_height >= 3) continue;
             const height = obstacleGrid.obstacles.get(map.screenToGridCoord(current, gridSize)) orelse 0;
             if (@abs(height - neigh_height) > 1) continue;
 

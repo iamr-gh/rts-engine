@@ -1,6 +1,7 @@
 const std = @import("std");
-const types = @import("types.zig");
+const types = @import("../types.zig");
 const grid = @import("grid.zig");
+const terrain = @import("terrain.zig");
 pub const rl = @cImport({
     @cInclude("raylib.h");
     @cInclude("raymath.h");
@@ -33,7 +34,7 @@ pub const ObstacleGrid = struct {
     }
 
     pub fn toggle(self: *ObstacleGrid, coord: GridCoord) !void {
-        const maxHeight: i32 = 2;
+        const maxHeight: i32 = 3;
 
         if (self.obstacles.get(coord)) |height| {
             if (height == 1) {
@@ -78,6 +79,48 @@ pub fn generateRandomObstacles(allocator: std.mem.Allocator, gridSize: i32, scre
                 try obstacleGrid.add(.{ .x = @as(i32, @intCast(col)), .y = @as(i32, @intCast(row)) });
                 try obstacleGrid.add(.{ .x = @as(i32, @intCast(col)), .y = @as(i32, @intCast(row)) });
             }
+        }
+    }
+
+    return obstacleGrid;
+}
+
+pub fn generateTerrainObstacles(allocator: std.mem.Allocator, gridSize: i32, screenWidth: i32, screenHeight: i32, excludePos: ScreenPos) !ObstacleGrid {
+    return generateTerrainObstaclesWithConfig(allocator, gridSize, screenWidth, screenHeight, excludePos, terrain.DEFAULT_TERRAIN_CONFIG);
+}
+
+pub fn generateTerrainObstaclesWithConfig(allocator: std.mem.Allocator, gridSize: i32, screenWidth: i32, screenHeight: i32, excludePos: ScreenPos, config: terrain.TerrainConfig) !ObstacleGrid {
+    const numCols = @divFloor(screenWidth, gridSize);
+    const numRows = @divFloor(screenHeight, gridSize);
+
+    const numColsUsize: usize = @intCast(numCols);
+    const numRowsUsize: usize = @intCast(numRows);
+
+    const heightmap = try terrain.generateHeightmap(allocator, numColsUsize, numRowsUsize, config);
+    defer terrain.freeHeightmap(allocator, heightmap);
+
+    var obstacleGrid = ObstacleGrid.init(allocator);
+    errdefer obstacleGrid.deinit();
+
+    for (0..numColsUsize) |col| {
+        for (0..numRowsUsize) |row| {
+            const gridX = @as(i32, @intCast(col)) * gridSize;
+            const gridY = @as(i32, @intCast(row)) * gridSize;
+            const center = grid.getSquareCenter(gridSize, .{ .x = gridX, .y = gridY });
+
+            if (std.meta.eql(center, excludePos)) continue;
+
+            const height = heightmap[row][col];
+            const terrainType = terrain.getTerrainType(height, config);
+
+            const obstacleHeight: i32 = switch (terrainType) {
+                .flat => continue,
+                .hill => 1,
+                .mountain => 2,
+                .peak => 3,
+            };
+
+            try obstacleGrid.obstacles.put(.{ .x = @as(i32, @intCast(col)), .y = @as(i32, @intCast(row)) }, obstacleHeight);
         }
     }
 
@@ -131,10 +174,12 @@ pub fn drawObstacles(obstacleGrid: *const ObstacleGrid, gridSize: i32) void {
         const coord = entry.key_ptr.*;
         const x = coord.x * gridSize;
         const y = coord.y * gridSize;
-        if (entry.value_ptr.* == 1) {
-            rl.DrawRectangle(x, y, gridSize, gridSize, rl.GRAY);
-        } else if (entry.value_ptr.* == 2) {
-            rl.DrawRectangle(x, y, gridSize, gridSize, rl.DARKGRAY);
+
+        switch (entry.value_ptr.*) {
+            1 => rl.DrawRectangle(x, y, gridSize, gridSize, rl.GRAY),
+            2 => rl.DrawRectangle(x, y, gridSize, gridSize, rl.DARKGRAY),
+            3 => rl.DrawRectangle(x, y, gridSize, gridSize, rl.BLACK),
+            else => {},
         }
     }
 }
