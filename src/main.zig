@@ -3,6 +3,7 @@ const types = @import("types.zig");
 const grid = @import("grid.zig");
 const map = @import("map.zig");
 const pathfinding = @import("pathfinding.zig");
+const agents = @import("agents.zig");
 
 const rl = grid.rl;
 const ScreenPos = types.ScreenPos;
@@ -28,23 +29,31 @@ pub fn main() !void {
     const centerY: i32 = screenHeight / 2;
 
     const agentSpeed: f32 = 200;
+    const INITIAL_AGENT_COUNT: usize = 2;
 
     var clickedPt: ScreenPos = .{ .x = centerX, .y = centerY };
     var agentPt: ScreenPos = .{ .x = centerX, .y = centerY };
 
-    var gridSize: i32 = 50;
+    var gridSize: i32 = 30;
     const gridChange: i32 = 10;
 
     agentPt = grid.getSquareCenter(gridSize, grid.getSquareInGrid(gridSize, clickedPt));
 
-    var path: ?std.ArrayList(ScreenPos) = null;
-    var previousTarget = agentPt;
+    const obstacleChance: [2]f32 = .{ 0.2, 0.2 };
 
-    var obstacleGrid = try map.generateRandomObstacles(allocator, gridSize, screenWidth, screenHeight, agentPt);
+    var obstacleGrid = try map.generateRandomObstacles(allocator, gridSize, screenWidth, screenHeight, agentPt, obstacleChance);
     var prevGridSize = gridSize;
 
     std.debug.assert(@mod(gridSize, 2) == 0);
     std.debug.assert(@mod(gridChange, 2) == 0);
+
+    var agentList = try agents.initAgents(allocator, INITIAL_AGENT_COUNT, agentPt, gridSize);
+    defer agents.cleanup(&agentList, allocator);
+
+    var selectionDragStart: ?ScreenPos = null;
+    var isDraggingSelection = false;
+    var leftButtonPressedThisFrame = false;
+    var leftButtonPressHandled = false;
 
     var end = false;
     while (!end and !rl.WindowShouldClose()) {
@@ -67,15 +76,50 @@ pub fn main() !void {
 
         if (gridSize != prevGridSize) {
             obstacleGrid.deinit();
-            obstacleGrid = try map.generateRandomObstacles(allocator, gridSize, screenWidth, screenHeight, agentPt);
-            if (path) |*p| p.deinit(allocator);
-            path = null;
+            obstacleGrid = try map.generateRandomObstacles(allocator, gridSize, screenWidth, screenHeight, agentPt, obstacleChance);
+            agents.clearAllPaths(&agentList, allocator);
             prevGridSize = gridSize;
         }
 
         if (rl.IsMouseButtonPressed(rl.MOUSE_LEFT_BUTTON)) {
-            clickedPt.x = rl.GetMouseX();
-            clickedPt.y = rl.GetMouseY();
+            leftButtonPressedThisFrame = true;
+            leftButtonPressHandled = false;
+        } else {
+            leftButtonPressedThisFrame = false;
+        }
+
+        if (rl.IsMouseButtonDown(rl.MOUSE_LEFT_BUTTON)) {
+            if (leftButtonPressedThisFrame and !leftButtonPressHandled) {
+                const mousePos: ScreenPos = .{ .x = rl.GetMouseX(), .y = rl.GetMouseY() };
+                if (agents.getAgentAtPosition(&agentList, mousePos, agents.AGENT_SELECT_RADIUS)) |agentIdx| {
+                    leftButtonPressHandled = true;
+                    const additive = rl.IsKeyDown(rl.KEY_LEFT_CONTROL) or rl.IsKeyDown(rl.KEY_RIGHT_CONTROL);
+                    if (!additive) {
+                        agents.deselectAll(&agentList);
+                    }
+                    agents.toggleSelection(&agentList.agents.items[agentIdx]);
+                } else {
+                    isDraggingSelection = true;
+                    selectionDragStart = mousePos;
+                    leftButtonPressHandled = true;
+                }
+            }
+        } else {
+            if (isDraggingSelection) {
+                const mousePos: ScreenPos = .{ .x = rl.GetMouseX(), .y = rl.GetMouseY() };
+                if (selectionDragStart) |start| {
+                    const x = @min(start.x, mousePos.x);
+                    const y = @min(start.y, mousePos.y);
+                    const width = @abs(start.x - mousePos.x);
+                    const height = @abs(start.y - mousePos.y);
+
+                    if (width > 2 or height > 2) {
+                        agents.selectAgentsInRect(&agentList, @as(i32, @intCast(x)), @as(i32, @intCast(y)), @as(i32, @intCast(width)), @as(i32, @intCast(height)), agents.AGENT_SELECT_RADIUS);
+                    }
+                }
+                isDraggingSelection = false;
+                selectionDragStart = null;
+            }
         }
 
         const gridSquare = grid.getSquareInGrid(gridSize, clickedPt);
@@ -83,19 +127,23 @@ pub fn main() !void {
 
         if (rl.IsMouseButtonPressed(rl.MOUSE_RIGHT_BUTTON)) {
             const mousePos: ScreenPos = .{ .x = rl.GetMouseX(), .y = rl.GetMouseY() };
-            const rightGridSquare = grid.getSquareInGrid(gridSize, mousePos);
-            const coord = GridCoord{
-                .x = @divFloor(rightGridSquare.x, gridSize),
-                .y = @divFloor(rightGridSquare.y, gridSize),
-            };
-            try obstacleGrid.toggle(coord);
-            if (!map.isObstacle(&obstacleGrid, gridSquareCenter, gridSize)) {
-                if (path) |*p| p.deinit(allocator);
-                path = pathfinding.getPathAstar(agentPt, gridSquareCenter, gridSize, &pathfinding.crossDiagonalMovement, &obstacleGrid, allocator) catch null;
-                if (path) |*p| {
-                    if (p.items.len > 0) _ = p.orderedRemove(0);
-                }
+
+            if (agents.getSelectedCount(&agentList) > 0) {
+                const targetPos = grid.getSquareCenter(gridSize, grid.getSquareInGrid(gridSize, mousePos));
+                agents.assignDestinationsToSelected(&agentList, targetPos, gridSize, &obstacleGrid, allocator) catch {};
+            } else {
+                const rightGridSquare = grid.getSquareInGrid(gridSize, mousePos);
+                const coord = GridCoord{
+                    .x = @divFloor(rightGridSquare.x, gridSize),
+                    .y = @divFloor(rightGridSquare.y, gridSize),
+                };
+                try obstacleGrid.toggle(coord);
             }
+        }
+
+        if (rl.IsMouseButtonPressed(rl.MOUSE_LEFT_BUTTON)) {
+            clickedPt.x = rl.GetMouseX();
+            clickedPt.y = rl.GetMouseY();
         }
 
         if (map.isObstacle(&obstacleGrid, gridSquareCenter, gridSize)) {
@@ -104,54 +152,32 @@ pub fn main() !void {
             rl.DrawRectangle(gridSquare.x, gridSquare.y, gridSize, gridSize, rl.GREEN);
         }
 
-        if (!std.meta.eql(gridSquareCenter, previousTarget)) {
-            if (path) |*p| p.deinit(allocator);
-            const agentSquare = grid.getSquareInGrid(gridSize, agentPt);
-            agentPt = grid.getSquareCenter(gridSize, agentSquare);
-            path = pathfinding.getPathAstar(agentPt, gridSquareCenter, gridSize, &pathfinding.crossDiagonalMovement, &obstacleGrid, allocator) catch null;
-            if (path) |*p| {
-                if (p.items.len > 0) _ = p.orderedRemove(0);
-            }
-            previousTarget = gridSquareCenter;
-        }
-
-        if (path) |*p| {
-            if (p.items.len > 0) {
-                const deltaTime = rl.GetFrameTime();
-                const nextPoint = p.items[0];
-                const dx: f32 = @floatFromInt(nextPoint.x - agentPt.x);
-                const dy: f32 = @floatFromInt(nextPoint.y - agentPt.y);
-                const distance = std.math.sqrt(dx * dx + dy * dy);
-
-                if (distance > 0) {
-                    const moveAmount = agentSpeed * deltaTime;
-                    if (moveAmount >= distance) {
-                        agentPt = nextPoint;
-                        _ = p.orderedRemove(0);
-                        if (p.items.len == 0) {
-                            p.deinit(allocator);
-                            path = null;
-                        }
-                    } else {
-                        const ratio = moveAmount / distance;
-                        agentPt.x += @as(i32, @intFromFloat(dx * ratio));
-                        agentPt.y += @as(i32, @intFromFloat(dy * ratio));
-                    }
-                }
-            }
-        }
-
         grid.printGrid(gridSize, 0, @max(screenWidth, screenHeight));
 
         map.drawObstacles(&obstacleGrid, gridSize);
 
-        if (path) |*p| {
-            pathfinding.drawPathLines(p.items);
+        const deltaTime = rl.GetFrameTime();
+        agents.updateAgentPositions(&agentList, deltaTime, agentSpeed, gridSize);
+
+        agents.drawAgents(&agentList);
+
+        for (agentList.agents.items) |*agent| {
+            if (agent.selected and agent.path != null) {
+                const path = agent.path.?;
+                var pathPositions = std.ArrayList(ScreenPos).empty;
+                defer pathPositions.deinit(allocator);
+                for (path.nodes.items) |node| {
+                    pathPositions.append(allocator, node.pos) catch {};
+                }
+                pathfinding.drawPathLines(pathPositions.items);
+            }
         }
 
-        rl.DrawCircle(agentPt.x, agentPt.y, 10, rl.RED);
+        if (isDraggingSelection) {
+            if (selectionDragStart) |start| {
+                const mousePos: ScreenPos = .{ .x = rl.GetMouseX(), .y = rl.GetMouseY() };
+                agents.drawSelectionBox(start, mousePos);
+            }
+        }
     }
-
-    obstacleGrid.deinit();
-    if (path) |*p| p.deinit(allocator);
 }

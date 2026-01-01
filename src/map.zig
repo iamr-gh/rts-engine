@@ -51,7 +51,7 @@ pub const ObstacleGrid = struct {
     }
 };
 
-pub fn generateRandomObstacles(allocator: std.mem.Allocator, gridSize: i32, screenWidth: i32, screenHeight: i32, excludePos: ScreenPos) !ObstacleGrid {
+pub fn generateRandomObstacles(allocator: std.mem.Allocator, gridSize: i32, screenWidth: i32, screenHeight: i32, excludePos: ScreenPos, chance: [2]f32) !ObstacleGrid {
     var rng = std.Random.DefaultPrng.init(@intCast(std.time.timestamp()));
     const random = rng.random();
 
@@ -72,9 +72,9 @@ pub fn generateRandomObstacles(allocator: std.mem.Allocator, gridSize: i32, scre
 
             if (std.meta.eql(center, excludePos)) continue;
 
-            if (random.float(f32) < 0.3) {
+            if (random.float(f32) < chance[0]) {
                 try obstacleGrid.add(.{ .x = @as(i32, @intCast(col)), .y = @as(i32, @intCast(row)) });
-            } else if (random.float(f32) < 0.3) {
+            } else if (random.float(f32) < chance[1]) {
                 try obstacleGrid.add(.{ .x = @as(i32, @intCast(col)), .y = @as(i32, @intCast(row)) });
                 try obstacleGrid.add(.{ .x = @as(i32, @intCast(col)), .y = @as(i32, @intCast(row)) });
             }
