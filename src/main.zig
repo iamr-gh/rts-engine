@@ -44,11 +44,13 @@ pub fn main() !void {
     var path: ?std.ArrayList(ScreenPos) = null;
     var previousTarget = agentPt;
 
-    var obstacleGrid = try map.generateTerrainObstacles(allocator, gridSize, screenWidth, screenHeight, agentPt);
+    var obstacleGrid = try map.generateTerrainObstaclesWithConfig(allocator, gridSize, screenWidth, screenHeight, agentPt, map.terrain.PLAINS);
     var prevGridSize = gridSize;
 
     std.debug.assert(@mod(gridSize, 2) == 0);
     std.debug.assert(@mod(gridChange, 2) == 0);
+
+    var box = selection.Box{};
 
     var end = false;
     while (!end and !rl.WindowShouldClose()) {
@@ -61,6 +63,8 @@ pub fn main() !void {
 
         rl.ClearBackground(rl.RAYWHITE);
 
+        selection.updateBox(&box);
+
         if (rl.IsKeyPressed(rl.KEY_LEFT)) {
             gridSize -= gridChange;
         } else if (rl.IsKeyPressed(rl.KEY_RIGHT))
@@ -71,7 +75,7 @@ pub fn main() !void {
 
         if (gridSize != prevGridSize) {
             obstacleGrid.deinit();
-            obstacleGrid = try map.generateTerrainObstacles(allocator, gridSize, screenWidth, screenHeight, agentPt);
+            obstacleGrid = try map.generateTerrainObstaclesWithConfig(allocator, gridSize, screenWidth, screenHeight, agentPt, map.terrain.PLAINS);
             if (path) |*p| p.deinit(allocator);
             path = null;
             prevGridSize = gridSize;
@@ -132,6 +136,7 @@ pub fn main() !void {
         grid.printGrid(gridSize, 0, @max(screenWidth, screenHeight));
 
         map.drawObstacles(&obstacleGrid, gridSize);
+        selection.drawBox(box);
 
         if (path) |*p| {
             pathfinding.drawPathLines(p.items);

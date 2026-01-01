@@ -6,36 +6,36 @@ const pathfinding = @import("pathfinding.zig");
 const rl = grid.rl;
 
 pub const Box = struct {
-    topLeft: types.ScreenPos,
-    bottomRight: types.ScreenPos,
+    src: types.ScreenPos = types.ScreenPos{},
+    dst: types.ScreenPos = types.ScreenPos{},
 };
 
-// pub const
-
 pub fn insideBox(pos: types.ScreenPos, box: Box) bool {
-    return pos.x >= box.topLeft.x and pos.x <= box.bottomRight.x and pos.y >= box.topLeft.y and pos.y <= box.bottomRight.y;
+    return pos.x >= box.src.x and pos.x <= box.dst.x and pos.y >= box.src.y and pos.y <= box.dst.y;
 }
 
 pub fn updateBox(box: *Box) void {
-    if (rl.IsMouseButtonPressed(rl.MOUSE_LEFT_BUTTON)) {
-        if (box.topLeft.x == 0 and box.topLeft.y == 0) {
-            box.topLeft.x = rl.GetMouseX();
-            box.topLeft.y = rl.GetMouseY();
+    if (rl.IsMouseButtonDown(rl.MOUSE_LEFT_BUTTON)) {
+        if (box.src.x == 0 and box.src.y == 0) {
+            box.src.x = rl.GetMouseX();
+            box.src.y = rl.GetMouseY();
         } else {
-            box.bottomRight.x = rl.GetMouseX();
-            box.bottomRight.y = rl.GetMouseY();
+            box.dst.x = rl.GetMouseX();
+            box.dst.y = rl.GetMouseY();
         }
     } else {
-        box.topLeft = Box{};
+        // box.topLeft = types.ScreenPos{};
+        // box.bottomRight = types.ScreenPos{};
     }
 }
 
 pub fn drawBox(box: Box) void {
-    if (box.topLeft.x == 0) {
+    if (box.src.x == box.dst.x or box.src.y == box.dst.y) {
         return;
     }
+
     // transparent box
-    rl.DrawRectangle(box.topLeft.x, box.topLeft.y, box.bottomRight.x - box.topLeft.x, box.bottomRight.y - box.topLeft.y, rl.Fade(rl.BLUE, 0.5));
+    rl.DrawRectangle(box.src.x, box.src.y, box.dst.x - box.src.x, box.dst.y - box.src.y, rl.Fade(rl.BLUE, 0.5));
 }
 
 // draw transparent selection box

@@ -1,7 +1,7 @@
 const std = @import("std");
 const types = @import("../types.zig");
 const grid = @import("grid.zig");
-const terrain = @import("terrain.zig");
+pub const terrain = @import("terrain.zig");
 pub const rl = @cImport({
     @cInclude("raylib.h");
     @cInclude("raymath.h");

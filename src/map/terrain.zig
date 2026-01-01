@@ -56,6 +56,18 @@ pub const ROLLING_HILLS: TerrainConfig = .{
     .peakThreshold = 0.8,
 };
 
+pub const PLAINS: TerrainConfig = .{
+    .seed = 12345,
+    .scale = 100.0,
+    .octaves = 2,
+    .persistence = 0.3,
+    .lacunarity = 2.0,
+    .ridgeStrength = 0.25,
+    .baseHeight = 0.55,
+    .mountainThreshold = 0.70,
+    .peakThreshold = 0.85,
+};
+
 pub fn generateHeightmap(allocator: std.mem.Allocator, width: usize, height: usize, config: TerrainConfig) ![][]f32 {
     var perlin = noise.PerlinNoise.init(config.seed);
 
