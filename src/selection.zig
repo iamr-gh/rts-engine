@@ -48,10 +48,5 @@ pub fn drawBox(box: Box) void {
         return;
     }
 
-    rl.DrawRectangle(x, y, width, height, rl.Fade(rl.BLUE, 0.5));
+    rl.DrawRectangle(x, y, width, height, rl.Fade(rl.BLUE, 0.25));
 }
-
-// draw transparent selection box
-// if (rl.IsMouseButtonPressed(rl.MOUSE_LEFT_BUTTON)) {
-//     const mousePos: ScreenPos = .{ .x = rl.GetMouseX(), .y = rl.GetMouseY() };
-// } else {}
