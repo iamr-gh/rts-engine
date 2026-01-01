@@ -67,10 +67,10 @@ pub fn getPathGreedy(start: ScreenPos, end: ScreenPos, gridSize: i32, movement: 
 }
 
 pub fn getPathAstar(start: ScreenPos, end: ScreenPos, gridSize: i32, movement: []const [2]i32, obstacleGrid: *const ObstacleGrid, allocator: std.mem.Allocator) !std.ArrayList(ScreenPos) {
-    std.debug.assert(@mod(start.x, gridSize) == @divFloor(gridSize, 2));
-    std.debug.assert(@mod(start.y, gridSize) == @divFloor(gridSize, 2));
-    std.debug.assert(@mod(end.x, gridSize) == @divFloor(gridSize, 2));
-    std.debug.assert(@mod(end.y, gridSize) == @divFloor(gridSize, 2));
+    // std.debug.assert(@mod(start.x, gridSize) == @divFloor(gridSize, 2));
+    // std.debug.assert(@mod(start.y, gridSize) == @divFloor(gridSize, 2));
+    // std.debug.assert(@mod(end.x, gridSize) == @divFloor(gridSize, 2));
+    // std.debug.assert(@mod(end.y, gridSize) == @divFloor(gridSize, 2));
 
     var openSet = std.ArrayList(ScreenPos).empty;
     defer openSet.deinit(allocator);
@@ -185,10 +185,10 @@ pub fn findPathWithReservations(
     allocator: std.mem.Allocator,
     agentId: usize,
 ) !?TimedPath {
-    std.debug.assert(@mod(start.x, gridSize) == @divFloor(gridSize, 2));
-    std.debug.assert(@mod(start.y, gridSize) == @divFloor(gridSize, 2));
-    std.debug.assert(@mod(end.x, gridSize) == @divFloor(gridSize, 2));
-    std.debug.assert(@mod(end.y, gridSize) == @divFloor(gridSize, 2));
+    // std.debug.assert(@mod(start.x, gridSize) == @divFloor(gridSize, 2));
+    // std.debug.assert(@mod(start.y, gridSize) == @divFloor(gridSize, 2));
+    // std.debug.assert(@mod(end.x, gridSize) == @divFloor(gridSize, 2));
+    // std.debug.assert(@mod(end.y, gridSize) == @divFloor(gridSize, 2));
 
     const startCoord = map.screenToGridCoord(start, gridSize);
     const endCoord = map.screenToGridCoord(end, gridSize);

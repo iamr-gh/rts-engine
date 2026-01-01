@@ -39,7 +39,7 @@ pub fn main() !void {
 
     agentPt = grid.getSquareCenter(gridSize, grid.getSquareInGrid(gridSize, clickedPt));
 
-    const obstacleChance: [2]f32 = .{ 0.2, 0.2 };
+    const obstacleChance: [2]f32 = .{ 0.0, 0.0 };
 
     var obstacleGrid = try map.generateRandomObstacles(allocator, gridSize, screenWidth, screenHeight, agentPt, obstacleChance);
     var prevGridSize = gridSize;
