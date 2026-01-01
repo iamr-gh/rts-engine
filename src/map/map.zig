@@ -176,8 +176,8 @@ pub fn drawObstacles(obstacleGrid: *const ObstacleGrid, gridSize: i32) void {
         const y = coord.y * gridSize;
 
         switch (entry.value_ptr.*) {
-            1 => rl.DrawRectangle(x, y, gridSize, gridSize, rl.GRAY),
-            2 => rl.DrawRectangle(x, y, gridSize, gridSize, rl.DARKGRAY),
+            1 => rl.DrawRectangle(x, y, gridSize, gridSize, rl.WHITE),
+            2 => rl.DrawRectangle(x, y, gridSize, gridSize, rl.GRAY),
             3 => rl.DrawRectangle(x, y, gridSize, gridSize, rl.BLACK),
             else => {},
         }

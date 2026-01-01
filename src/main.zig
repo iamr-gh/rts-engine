@@ -186,7 +186,8 @@ pub fn main() !void {
                     if (agent.path) |*p| p.deinit(allocator);
                     const agentSquare = grid.getSquareInGrid(gridSize, agent.pos);
                     const agentPosCenter = grid.getSquareCenter(gridSize, agentSquare);
-                    agent.path = pathfinding.getPathAstar(agentPosCenter, goalSquareCenter, gridSize, &pathfinding.crossDiagonalMovement, &obstacleGrid, allocator) catch null;
+                    const maxPathLen: usize = @intCast(@divTrunc(screenHeight, gridSize) + @divTrunc(screenWidth, gridSize));
+                    agent.path = pathfinding.getPathAstar(agentPosCenter, goalSquareCenter, gridSize, &pathfinding.crossDiagonalMovement, &obstacleGrid, allocator, maxPathLen) catch null;
                     if (agent.path) |*p| {
                         if (p.items.len > 0) _ = p.orderedRemove(0);
                     }
@@ -208,6 +209,8 @@ pub fn main() !void {
 
         for (agents.items) |*agent| {
             if (agent.path) |*p| {
+                // moving along path
+                // removes each element as it gets there
                 if (p.items.len > 0) {
                     const nextPoint = p.items[0];
                     const dx: f32 = @floatFromInt(nextPoint.x - agent.pos.x);

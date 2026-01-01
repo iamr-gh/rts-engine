@@ -62,7 +62,7 @@ pub fn getPathGreedy(start: ScreenPos, end: ScreenPos, gridSize: i32, movement: 
     return pathList;
 }
 
-pub fn getPathAstar(start: ScreenPos, end: ScreenPos, gridSize: i32, movement: []const [2]i32, obstacleGrid: *const ObstacleGrid, allocator: std.mem.Allocator) !std.ArrayList(ScreenPos) {
+pub fn getPathAstar(start: ScreenPos, end: ScreenPos, gridSize: i32, movement: []const [2]i32, obstacleGrid: *const ObstacleGrid, allocator: std.mem.Allocator, maxPathLen: usize) !std.ArrayList(ScreenPos) {
     std.debug.assert(@mod(start.x, gridSize) == @divFloor(gridSize, 2));
     std.debug.assert(@mod(start.y, gridSize) == @divFloor(gridSize, 2));
     std.debug.assert(@mod(end.x, gridSize) == @divFloor(gridSize, 2));
@@ -103,7 +103,7 @@ pub fn getPathAstar(start: ScreenPos, end: ScreenPos, gridSize: i32, movement: [
         const current = openSet.orderedRemove(currentIdx);
 
         if (std.meta.eql(current, end)) {
-            var path = try std.ArrayList(ScreenPos).initCapacity(allocator, 100);
+            var path = try std.ArrayList(ScreenPos).initCapacity(allocator, maxPathLen);
             errdefer path.deinit(allocator);
             var reconstructCurrent = current;
             while (cameFrom.get(reconstructCurrent)) |parent| {
