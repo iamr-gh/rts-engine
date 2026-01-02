@@ -294,6 +294,7 @@ pub fn main() !void {
                             }
 
                             // if so, wait
+                            // need to refine this local planner
                             // if (tooClose) {
                             //     continue;
                             // }
