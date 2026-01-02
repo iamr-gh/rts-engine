@@ -78,7 +78,7 @@ pub fn isValidMove(curr: ScreenPos, next: ScreenPos, obstacleGrid: *const Obstac
     return !too_high and !too_steep and good_diagonal and !out_of_bounds;
 }
 
-pub fn getPathAstar(start: ScreenPos, end: ScreenPos, gridSize: i32, movement: []const [2]i32, obstacleGrid: *const ObstacleGrid, allocator: std.mem.Allocator, maxPathLen: usize) !std.ArrayList(ScreenPos) {
+pub fn getPathAstar(start: ScreenPos, end: ScreenPos, gridSize: i32, movement: []const [2]i32, obstacleGrid: *const ObstacleGrid, allocator: std.mem.Allocator, maxPathLen: usize, occupiedMap: std.AutoHashMap(ScreenPos, void)) !std.ArrayList(ScreenPos) {
     std.debug.assert(@mod(start.x, gridSize) == @divFloor(gridSize, 2));
     std.debug.assert(@mod(start.y, gridSize) == @divFloor(gridSize, 2));
     std.debug.assert(@mod(end.x, gridSize) == @divFloor(gridSize, 2));
@@ -139,6 +139,7 @@ pub fn getPathAstar(start: ScreenPos, end: ScreenPos, gridSize: i32, movement: [
             };
 
             if (!isValidMove(current, neighbor, obstacleGrid, gridSize)) continue;
+            if (occupiedMap.get(neighbor)) |_| continue;
 
             const tentativeG = (gScore.get(current) orelse std.math.maxInt(u32)) + 1;
 

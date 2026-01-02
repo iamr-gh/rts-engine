@@ -44,7 +44,7 @@ pub fn main() !void {
 
     var goalPt: ScreenPos = .{ .x = centerX, .y = centerY };
 
-    var gridSize: i32 = 6;
+    var gridSize: i32 = 10;
     const gridChange: i32 = 10;
 
     var obstacleGrid = try map.generateTerrainObstaclesWithConfig(allocator, gridSize, screenWidth, screenHeight, goalPt, map.terrain.PLAINS);
@@ -189,9 +189,14 @@ pub fn main() !void {
                 }
             }
 
+            // goal allocation
             const goals = try pathfinding.getGroupGoals(&obstacleGrid, goalSquareCenter, num_selected, gridSize, allocator);
 
+            // path assignment
             var idx: usize = 0;
+
+            var occupiedMap = std.AutoHashMap(ScreenPos, void).init(allocator); // eventually replace with time-keyed map
+
             for (agents.items) |*agent| {
                 if (agent.selected) {
                     if (agent.path) |*p| p.deinit(allocator);
@@ -200,8 +205,12 @@ pub fn main() !void {
                     const agentSquare = grid.getSquareInGrid(gridSize, agent.pos);
                     const agentPosCenter = grid.getSquareCenter(gridSize, agentSquare);
                     const maxPathLen: usize = @intCast(@divTrunc(screenHeight, gridSize) + @divTrunc(screenWidth, gridSize));
-                    agent.path = pathfinding.getPathAstar(agentPosCenter, goal, gridSize, &pathfinding.crossDiagonalMovement, &obstacleGrid, allocator, maxPathLen) catch null;
+                    agent.path = pathfinding.getPathAstar(agentPosCenter, goal, gridSize, &pathfinding.crossDiagonalMovement, &obstacleGrid, allocator, maxPathLen, occupiedMap) catch null;
                     if (agent.path) |*p| {
+                        // add all parts of path to occupancy
+                        for (p.items) |node| {
+                            try occupiedMap.put(node, {});
+                        }
                         if (p.items.len > 0) _ = p.orderedRemove(0);
                     }
                     idx += 1;
@@ -221,7 +230,7 @@ pub fn main() !void {
 
         const deltaTime = rl.GetFrameTime();
 
-        // moving along each path
+        // path following code
         for (agents.items) |*agent| {
             if (agent.path) |*p| {
                 if (p.items.len > 0) {
