@@ -15,4 +15,6 @@ pub const Agent = struct {
     path: ?std.ArrayList(ScreenPos),
     selected: bool,
     color_index: usize,
+    moveStartTime: i64 = 0, // timestamp when agent started current path (for priority)
+    waitStartTime: ?i64 = null, // timestamp when agent started waiting (null if not waiting)
 };

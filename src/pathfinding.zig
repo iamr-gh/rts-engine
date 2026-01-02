@@ -16,6 +16,10 @@ const Agent = types.Agent;
 pub const crossMovement: [4][2]i32 = .{ .{ 0, 1 }, .{ 1, 0 }, .{ 0, -1 }, .{ -1, 0 } };
 pub const crossDiagonalMovement: [8][2]i32 = .{ .{ 1, 1 }, .{ -1, -1 }, .{ 1, -1 }, .{ -1, 1 }, .{ 0, 1 }, .{ 0, -1 }, .{ 1, 0 }, .{ -1, 0 } };
 
+// Collision avoidance constants
+pub const COLLISION_LOOK_AHEAD: f32 = 24.0; // pixels to look ahead for collisions
+pub const DEFAULT_MAX_WAIT_TIME: i64 = 2; // seconds before replanning (configurable)
+
 /// Returns true if an agent can stand on this cell (height < 3)
 pub fn isValidStandingCell(pos: ScreenPos, gridSize: i32, obstacleGrid: *const ObstacleGrid) bool {
     const height = obstacleGrid.obstacles.get(map.screenToGridCoord(pos, gridSize)) orelse 0;
@@ -38,6 +42,197 @@ pub fn isValidMove(from: ScreenPos, to: ScreenPos, gridSize: i32, obstacleGrid: 
     if (!map.canMoveDiagonal(from, to, gridSize, obstacleGrid)) return false;
 
     return true;
+}
+
+// ============================================================================
+// Collision Avoidance Functions
+// ============================================================================
+
+/// Check if two positions would cause a collision (distance < minDistance)
+pub fn wouldCollide(pos1: rl.Vector2, pos2: rl.Vector2, minDistance: f32) bool {
+    const dx = pos1.x - pos2.x;
+    const dy = pos1.y - pos2.y;
+    return (dx * dx + dy * dy) < (minDistance * minDistance);
+}
+
+/// Check if a floating-point position is walkable (not in an obstacle)
+pub fn isPositionWalkable(pos: rl.Vector2, gridSize: i32, obstacleGrid: *const ObstacleGrid) bool {
+    const screenPos = ScreenPos{
+        .x = @intFromFloat(pos.x),
+        .y = @intFromFloat(pos.y),
+    };
+    return isValidStandingCell(screenPos, gridSize, obstacleGrid);
+}
+
+/// Rotate a 2D vector by the given angle in degrees
+fn rotateVector(v: rl.Vector2, angleDegrees: f32) rl.Vector2 {
+    const rad = angleDegrees * std.math.pi / 180.0;
+    const cos_val = @cos(rad);
+    const sin_val = @sin(rad);
+    return .{
+        .x = v.x * cos_val - v.y * sin_val,
+        .y = v.x * sin_val + v.y * cos_val,
+    };
+}
+
+/// Calculate the minimum distance between two line segments (p1-p2 and p3-p4)
+/// Used to check if two moving agents would cross paths
+fn segmentDistance(p1: rl.Vector2, p2: rl.Vector2, p3: rl.Vector2, p4: rl.Vector2) f32 {
+    // Check distance at multiple points along both segments
+    const steps: usize = 4;
+    var minDist: f32 = std.math.inf(f32);
+
+    for (0..steps + 1) |i| {
+        const t1 = @as(f32, @floatFromInt(i)) / @as(f32, @floatFromInt(steps));
+        const point1 = rl.Vector2{
+            .x = p1.x + (p2.x - p1.x) * t1,
+            .y = p1.y + (p2.y - p1.y) * t1,
+        };
+
+        for (0..steps + 1) |j| {
+            const t2 = @as(f32, @floatFromInt(j)) / @as(f32, @floatFromInt(steps));
+            const point2 = rl.Vector2{
+                .x = p3.x + (p4.x - p3.x) * t2,
+                .y = p3.y + (p4.y - p3.y) * t2,
+            };
+
+            const dx = point1.x - point2.x;
+            const dy = point1.y - point2.y;
+            const dist = @sqrt(dx * dx + dy * dy);
+            if (dist < minDist) {
+                minDist = dist;
+            }
+        }
+    }
+
+    return minDist;
+}
+
+/// Predict where an agent will be after deltaTime seconds
+fn predictAgentPosition(agent: *const Agent, deltaTime: f32, speed: f32) rl.Vector2 {
+    const currentPos = rl.Vector2{
+        .x = @floatFromInt(agent.pos.x),
+        .y = @floatFromInt(agent.pos.y),
+    };
+
+    // If no path, agent stays in place
+    if (agent.path == null) return currentPos;
+    const path = &agent.path.?;
+    if (path.items.len == 0) return currentPos;
+
+    const nextPoint = path.items[0];
+    const targetPos = rl.Vector2{
+        .x = @floatFromInt(nextPoint.x),
+        .y = @floatFromInt(nextPoint.y),
+    };
+
+    const dx = targetPos.x - currentPos.x;
+    const dy = targetPos.y - currentPos.y;
+    const distance = @sqrt(dx * dx + dy * dy);
+
+    if (distance < 0.001) return currentPos;
+
+    const moveAmount = speed * deltaTime;
+    if (moveAmount >= distance) {
+        return targetPos;
+    }
+
+    const ratio = moveAmount / distance;
+    return rl.Vector2{
+        .x = currentPos.x + dx * ratio,
+        .y = currentPos.y + dy * ratio,
+    };
+}
+
+/// Find a safe movement vector for an agent, avoiding collisions with higher-priority agents and walls.
+/// Returns the movement vector to apply, or null if the agent should wait.
+///
+/// Parameters:
+/// - agentIndex: index of the agent being moved in the agents slice
+/// - agents: all agents
+/// - agentOrder: indices sorted by priority (earlier movers first)
+/// - orderPosition: this agent's position in the priority order
+/// - desiredDir: normalized direction agent wants to move
+/// - speed: agent movement speed
+/// - deltaTime: frame time
+/// - agentRadius: collision radius
+/// - obstacleGrid: for wall collision checking
+/// - gridSize: grid cell size
+pub fn findSafeMovement(
+    agentIndex: usize,
+    agents: []const Agent,
+    agentOrder: []const usize,
+    orderPosition: usize,
+    desiredDir: rl.Vector2,
+    speed: f32,
+    deltaTime: f32,
+    agentRadius: f32,
+    obstacleGrid: *const ObstacleGrid,
+    gridSize: i32,
+) ?rl.Vector2 {
+    const agent = &agents[agentIndex];
+    const currentPos = rl.Vector2{
+        .x = @floatFromInt(agent.pos.x),
+        .y = @floatFromInt(agent.pos.y),
+    };
+
+    const moveDistance = speed * deltaTime;
+    const minSeparation = agentRadius * 2.0;
+
+    // Try the desired direction first, then alternative angles
+    const angles = [_]f32{ 0, 30, -30, 45, -45, 60, -60, 90, -90, 120, -120, 150, -150 };
+
+    for (angles) |angle| {
+        const testDir = rotateVector(desiredDir, angle);
+        const testMove = rl.Vector2{
+            .x = testDir.x * moveDistance,
+            .y = testDir.y * moveDistance,
+        };
+        const predictedPos = rl.Vector2{
+            .x = currentPos.x + testMove.x,
+            .y = currentPos.y + testMove.y,
+        };
+
+        // Check wall collision
+        if (!isPositionWalkable(predictedPos, gridSize, obstacleGrid)) {
+            continue;
+        }
+
+        // Check collision with higher-priority agents (those earlier in agentOrder)
+        var collision = false;
+        for (0..orderPosition) |i| {
+            const otherIdx = agentOrder[i];
+            if (otherIdx == agentIndex) continue;
+
+            const other = &agents[otherIdx];
+            const otherPos = rl.Vector2{
+                .x = @floatFromInt(other.pos.x),
+                .y = @floatFromInt(other.pos.y),
+            };
+
+            // Predict where the other agent will be
+            const otherPredicted = predictAgentPosition(other, deltaTime, speed);
+
+            // Check collision at predicted positions
+            if (wouldCollide(predictedPos, otherPredicted, minSeparation)) {
+                collision = true;
+                break;
+            }
+
+            // Check if paths would cross (segment intersection)
+            if (segmentDistance(currentPos, predictedPos, otherPos, otherPredicted) < minSeparation) {
+                collision = true;
+                break;
+            }
+        }
+
+        if (!collision) {
+            return testMove;
+        }
+    }
+
+    // No safe movement found
+    return null;
 }
 
 /// Compute angle in radians from dx, dy (-pi to pi)
@@ -160,6 +355,116 @@ pub fn getPathAstar(start: ScreenPos, end: ScreenPos, gridSize: i32, movement: [
                 .x = current.x + move[0] * gridSize,
                 .y = current.y + move[1] * gridSize,
             };
+
+            if (!isValidMove(current, neighbor, gridSize, obstacleGrid)) continue;
+
+            const neighborSquare = grid.getSquareInGrid(gridSize, neighbor);
+            if (neighborSquare.x < 0 or neighborSquare.y < 0) continue;
+
+            const tentativeG = (gScore.get(current) orelse std.math.maxInt(u32)) + 1;
+
+            if (tentativeG < (gScore.get(neighbor) orelse std.math.maxInt(u32))) {
+                try cameFrom.put(neighbor, current);
+                try gScore.put(neighbor, tentativeG);
+                try fScore.put(neighbor, tentativeG + getScore(neighbor, end));
+
+                var found = false;
+                for (openSet.items) |pos| {
+                    if (std.meta.eql(pos, neighbor)) {
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) {
+                    try openSet.append(allocator, neighbor);
+                }
+            }
+        }
+    }
+
+    return error.NoPathFound;
+}
+
+/// A* pathfinding with additional blocked cells (for replanning around other agents)
+/// blockedCells contains positions that should be treated as impassable obstacles
+pub fn getPathAstarWithBlockedCells(
+    start: ScreenPos,
+    end: ScreenPos,
+    gridSize: i32,
+    movement: []const [2]i32,
+    obstacleGrid: *const ObstacleGrid,
+    blockedCells: []const ScreenPos,
+    allocator: std.mem.Allocator,
+    maxPathLen: usize,
+) !std.ArrayList(ScreenPos) {
+    std.debug.assert(@mod(start.x, gridSize) == @divFloor(gridSize, 2));
+    std.debug.assert(@mod(start.y, gridSize) == @divFloor(gridSize, 2));
+    std.debug.assert(@mod(end.x, gridSize) == @divFloor(gridSize, 2));
+    std.debug.assert(@mod(end.y, gridSize) == @divFloor(gridSize, 2));
+
+    // Build a set of blocked cells for O(1) lookup
+    var blockedSet = std.AutoHashMap(ScreenPos, void).init(allocator);
+    defer blockedSet.deinit();
+    for (blockedCells) |cell| {
+        try blockedSet.put(cell, {});
+    }
+
+    var openSet = std.ArrayList(ScreenPos).empty;
+    defer openSet.deinit(allocator);
+
+    var cameFrom = std.AutoHashMap(ScreenPos, ScreenPos).init(allocator);
+    defer cameFrom.deinit();
+
+    var gScore = std.AutoHashMap(ScreenPos, u32).init(allocator);
+    defer gScore.deinit();
+
+    var fScore = std.AutoHashMap(ScreenPos, u32).init(allocator);
+    defer fScore.deinit();
+
+    try openSet.append(allocator, start);
+    try gScore.put(start, 0);
+    try fScore.put(start, getScore(start, end));
+
+    const max_iters: usize = 10000;
+    var iters: usize = 0;
+
+    while (openSet.items.len > 0 and iters < max_iters) {
+        iters += 1;
+        var currentIdx: usize = 0;
+        var minF: u32 = std.math.maxInt(u32);
+
+        for (openSet.items, 0..) |pos, i| {
+            const f = fScore.get(pos) orelse minF;
+            if (f < minF) {
+                minF = f;
+                currentIdx = i;
+            }
+        }
+
+        const current = openSet.orderedRemove(currentIdx);
+
+        if (std.meta.eql(current, end)) {
+            var path = try std.ArrayList(ScreenPos).initCapacity(allocator, maxPathLen);
+            errdefer path.deinit(allocator);
+            var reconstructCurrent = current;
+            while (cameFrom.get(reconstructCurrent)) |parent| {
+                path.appendAssumeCapacity(reconstructCurrent);
+                reconstructCurrent = parent;
+            }
+            path.appendAssumeCapacity(start);
+
+            std.mem.reverse(ScreenPos, path.items);
+            return path;
+        }
+
+        for (movement) |move| {
+            const neighbor: ScreenPos = .{
+                .x = current.x + move[0] * gridSize,
+                .y = current.y + move[1] * gridSize,
+            };
+
+            // Check if neighbor is in blocked cells
+            if (blockedSet.contains(neighbor)) continue;
 
             if (!isValidMove(current, neighbor, gridSize, obstacleGrid)) continue;
 

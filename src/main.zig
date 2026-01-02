@@ -5,13 +5,14 @@ const map = @import("map/map.zig");
 const pathfinding = @import("pathfinding.zig");
 const selection = @import("selection.zig");
 
-const rl = grid.rl;
+const rl = pathfinding.rl;
 const ScreenPos = types.ScreenPos;
 const GridCoord = types.GridCoord;
 const Agent = types.Agent;
 
 const AGENT_RADIUS: f32 = 8.0;
 const CLICK_THRESHOLD: f32 = 10.0;
+const MAX_WAIT_TIME: i64 = 2; // seconds before agent replans path (configurable)
 
 fn isAgentClicked(agentPos: ScreenPos, mousePos: ScreenPos) bool {
     const dx: f32 = @floatFromInt(agentPos.x - mousePos.x);
@@ -197,6 +198,7 @@ pub fn main() !void {
 
                 // Assign paths to each selected agent
                 var goalIdx: usize = 0;
+                const currentTime = std.time.timestamp();
                 for (agents.items) |*agent| {
                     if (agent.selected) {
                         if (agent.path) |*p| p.deinit(allocator);
@@ -218,6 +220,11 @@ pub fn main() !void {
                         if (agent.path) |*p| {
                             if (p.items.len > 0) _ = p.orderedRemove(0);
                         }
+
+                        // Set movement priority timestamp and reset wait timer
+                        agent.moveStartTime = currentTime;
+                        agent.waitStartTime = null;
+
                         goalIdx += 1;
                     }
                 }
@@ -235,33 +242,135 @@ pub fn main() !void {
         }
 
         const deltaTime = rl.GetFrameTime();
+        const currentTime = std.time.timestamp();
 
-        for (agents.items) |*agent| {
-            if (agent.path) |*p| {
-                // moving along path
-                // removes each element as it gets there
-                if (p.items.len > 0) {
-                    const nextPoint = p.items[0];
-                    const dx: f32 = @floatFromInt(nextPoint.x - agent.pos.x);
-                    const dy: f32 = @floatFromInt(nextPoint.y - agent.pos.y);
-                    const distance = std.math.sqrt(dx * dx + dy * dy);
+        // Build array of agent indices sorted by moveStartTime (priority order)
+        var agentOrder: [100]usize = undefined; // Support up to 100 agents
+        const numAgents = agents.items.len;
+        for (0..numAgents) |i| {
+            agentOrder[i] = i;
+        }
 
-                    if (distance > 0) {
-                        const moveAmount = agentSpeed * deltaTime;
-                        if (moveAmount >= distance) {
-                            agent.pos = nextPoint;
-                            _ = p.orderedRemove(0);
-                            if (p.items.len == 0) {
-                                p.deinit(allocator);
-                                agent.path = null;
-                            }
-                        } else {
-                            const ratio = moveAmount / distance;
-                            agent.pos.x += @as(i32, @intFromFloat(dx * ratio));
-                            agent.pos.y += @as(i32, @intFromFloat(dy * ratio));
+        // Simple insertion sort by moveStartTime (earlier = higher priority)
+        for (1..numAgents) |i| {
+            const key = agentOrder[i];
+            var j: usize = i;
+            while (j > 0 and agents.items[agentOrder[j - 1]].moveStartTime > agents.items[key].moveStartTime) {
+                agentOrder[j] = agentOrder[j - 1];
+                j -= 1;
+            }
+            agentOrder[j] = key;
+        }
+
+        // Process agents in priority order
+        for (0..numAgents) |orderPos| {
+            const currentAgentIdx = agentOrder[orderPos];
+            var agent = &agents.items[currentAgentIdx];
+
+            if (agent.path == null) continue;
+            var p = &agent.path.?;
+            if (p.items.len == 0) continue;
+
+            const nextPoint = p.items[0];
+            const currentPos = rl.Vector2{
+                .x = @floatFromInt(agent.pos.x),
+                .y = @floatFromInt(agent.pos.y),
+            };
+            const targetPos = rl.Vector2{
+                .x = @floatFromInt(nextPoint.x),
+                .y = @floatFromInt(nextPoint.y),
+            };
+
+            const dx = targetPos.x - currentPos.x;
+            const dy = targetPos.y - currentPos.y;
+            const distance = @sqrt(dx * dx + dy * dy);
+
+            // Check if reached waypoint
+            if (distance < 1.0) {
+                _ = p.orderedRemove(0);
+                agent.waitStartTime = null;
+                if (p.items.len == 0) {
+                    p.deinit(allocator);
+                    agent.path = null;
+                }
+                continue;
+            }
+
+            // Calculate desired direction
+            const desiredDir = rl.Vector2{
+                .x = dx / distance,
+                .y = dy / distance,
+            };
+
+            // Try to find safe movement
+            const safeMove = pathfinding.findSafeMovement(
+                currentAgentIdx,
+                agents.items,
+                agentOrder[0..numAgents],
+                orderPos,
+                desiredDir,
+                agentSpeed,
+                deltaTime,
+                AGENT_RADIUS,
+                &obstacleGrid,
+                gridSize,
+            );
+
+            if (safeMove) |move| {
+                // Apply movement
+                const newX = currentPos.x + move.x;
+                const newY = currentPos.y + move.y;
+                agent.pos.x = @intFromFloat(newX);
+                agent.pos.y = @intFromFloat(newY);
+                agent.waitStartTime = null;
+            } else {
+                // Can't move - start or continue waiting
+                if (agent.waitStartTime == null) {
+                    agent.waitStartTime = currentTime;
+                } else if (currentTime - agent.waitStartTime.? >= MAX_WAIT_TIME) {
+                    // Waited too long - recompute path treating other agents as obstacles
+                    const finalGoal = p.items[p.items.len - 1];
+                    p.deinit(allocator);
+                    agent.path = null;
+                    agent.waitStartTime = null;
+
+                    // Collect positions of other agents as blocked cells
+                    var blockedCells: [100]ScreenPos = undefined;
+                    var blockedCount: usize = 0;
+                    for (agents.items, 0..) |other, otherIdx| {
+                        if (otherIdx == currentAgentIdx) continue;
+                        const otherSquare = grid.getSquareInGrid(gridSize, other.pos);
+                        const otherCenter = grid.getSquareCenter(gridSize, otherSquare);
+                        if (blockedCount < 100) {
+                            blockedCells[blockedCount] = otherCenter;
+                            blockedCount += 1;
                         }
                     }
+
+                    // Recompute path avoiding other agents
+                    const agentSquare = grid.getSquareInGrid(gridSize, agent.pos);
+                    const agentPosCenter = grid.getSquareCenter(gridSize, agentSquare);
+                    const maxPathLen: usize = @intCast(@divTrunc(screenHeight, gridSize) + @divTrunc(screenWidth, gridSize));
+
+                    agent.path = pathfinding.getPathAstarWithBlockedCells(
+                        agentPosCenter,
+                        finalGoal,
+                        gridSize,
+                        &pathfinding.crossDiagonalMovement,
+                        &obstacleGrid,
+                        blockedCells[0..blockedCount],
+                        allocator,
+                        maxPathLen,
+                    ) catch null;
+
+                    if (agent.path) |*newPath| {
+                        if (newPath.items.len > 0) _ = newPath.orderedRemove(0);
+                    }
+
+                    // Reset move start time for new path
+                    agent.moveStartTime = currentTime;
                 }
+                // else: keep waiting
             }
         }
 
