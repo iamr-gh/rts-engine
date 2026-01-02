@@ -181,15 +181,44 @@ pub fn main() !void {
             const goalSquare = grid.getSquareInGrid(gridSize, goalPt);
             const goalSquareCenter = grid.getSquareCenter(gridSize, goalSquare);
 
-            for (agents.items) |*agent| {
-                if (agent.selected) {
-                    if (agent.path) |*p| p.deinit(allocator);
-                    const agentSquare = grid.getSquareInGrid(gridSize, agent.pos);
-                    const agentPosCenter = grid.getSquareCenter(gridSize, agentSquare);
-                    const maxPathLen: usize = @intCast(@divTrunc(screenHeight, gridSize) + @divTrunc(screenWidth, gridSize));
-                    agent.path = pathfinding.getPathAstar(agentPosCenter, goalSquareCenter, gridSize, &pathfinding.crossDiagonalMovement, &obstacleGrid, allocator, maxPathLen) catch null;
-                    if (agent.path) |*p| {
-                        if (p.items.len > 0) _ = p.orderedRemove(0);
+            // Get group goals preserving formation
+            const maxSearchRadius: i32 = 20;
+            var groupGoals = pathfinding.findGroupGoals(
+                goalSquareCenter,
+                agents.items,
+                gridSize,
+                &obstacleGrid,
+                allocator,
+                maxSearchRadius,
+            ) catch null;
+
+            if (groupGoals) |_| {
+                defer groupGoals.?.deinit(allocator);
+
+                // Assign paths to each selected agent
+                var goalIdx: usize = 0;
+                for (agents.items) |*agent| {
+                    if (agent.selected) {
+                        if (agent.path) |*p| p.deinit(allocator);
+                        const agentSquare = grid.getSquareInGrid(gridSize, agent.pos);
+                        const agentPosCenter = grid.getSquareCenter(gridSize, agentSquare);
+                        const maxPathLen: usize = @intCast(@divTrunc(screenHeight, gridSize) + @divTrunc(screenWidth, gridSize));
+
+                        const agentGoal = groupGoals.?.items[goalIdx];
+                        agent.path = pathfinding.getPathAstar(
+                            agentPosCenter,
+                            agentGoal,
+                            gridSize,
+                            &pathfinding.crossDiagonalMovement,
+                            &obstacleGrid,
+                            allocator,
+                            maxPathLen,
+                        ) catch null;
+
+                        if (agent.path) |*p| {
+                            if (p.items.len > 0) _ = p.orderedRemove(0);
+                        }
+                        goalIdx += 1;
                     }
                 }
             }
