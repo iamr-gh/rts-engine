@@ -2,7 +2,7 @@ const std = @import("std");
 const types = @import("types.zig");
 const grid = @import("map/grid.zig");
 const map = @import("map/map.zig");
-const queue = @import("queue.zig");
+const utils = @import("utils.zig");
 pub const rl = @cImport({
     @cInclude("raylib.h");
     @cInclude("raymath.h");
@@ -78,7 +78,8 @@ pub fn isValidMove(curr: ScreenPos, next: ScreenPos, obstacleGrid: *const Obstac
     return !too_high and !too_steep and good_diagonal and !out_of_bounds;
 }
 
-pub fn getPathAstar(start: ScreenPos, end: ScreenPos, gridSize: i32, movement: []const [2]i32, obstacleGrid: *const ObstacleGrid, allocator: std.mem.Allocator, maxPathLen: usize, occupiedMap: std.AutoHashMap(ScreenPos, void)) !std.ArrayList(ScreenPos) {
+// occupiedMap could likely switch to a more efficient datastructure
+pub fn getPathAstar(start: ScreenPos, end: ScreenPos, gridSize: i32, movement: []const [2]i32, obstacleGrid: *const ObstacleGrid, allocator: std.mem.Allocator, maxPathLen: usize, occupiedMap: std.AutoHashMap(ScreenPos, std.AutoHashMap(i32, void))) !std.ArrayList(ScreenPos) {
     std.debug.assert(@mod(start.x, gridSize) == @divFloor(gridSize, 2));
     std.debug.assert(@mod(start.y, gridSize) == @divFloor(gridSize, 2));
     std.debug.assert(@mod(end.x, gridSize) == @divFloor(gridSize, 2));
@@ -102,6 +103,11 @@ pub fn getPathAstar(start: ScreenPos, end: ScreenPos, gridSize: i32, movement: [
 
     const max_iters: usize = 10000;
     var iters: usize = 0;
+
+    var timeLookup = std.AutoHashMap(ScreenPos, i32).init(allocator);
+    defer timeLookup.deinit();
+
+    try timeLookup.put(start, 0);
 
     while (openSet.items.len > 0 and iters < max_iters) {
         iters += 1;
@@ -139,12 +145,22 @@ pub fn getPathAstar(start: ScreenPos, end: ScreenPos, gridSize: i32, movement: [
             };
 
             if (!isValidMove(current, neighbor, obstacleGrid, gridSize)) continue;
-            if (occupiedMap.get(neighbor)) |_| continue;
 
+            // in order to collide with occupied map, need to be at same place same time as another
+            if (occupiedMap.get(neighbor)) |times| {
+                if (timeLookup.get(current)) |time| {
+                    if (times.get(time + 1)) |_| {
+                        continue;
+                    }
+                }
+            }
             const tentativeG = (gScore.get(current) orelse std.math.maxInt(u32)) + 1;
 
             if (tentativeG < (gScore.get(neighbor) orelse std.math.maxInt(u32))) {
                 try cameFrom.put(neighbor, current);
+
+                try timeLookup.put(neighbor, timeLookup.get(current).? + 1);
+
                 try gScore.put(neighbor, tentativeG);
                 try fScore.put(neighbor, tentativeG + getScore(neighbor, end));
 
@@ -172,7 +188,7 @@ pub fn getGroupGoals(obstacles: *ObstacleGrid, goal: ScreenPos, count: i32, grid
     var taken = std.AutoHashMap(ScreenPos, void).init(allocator);
 
     // should be a bfs, so a queue not a stack
-    var toVisit = queue.Queue(ScreenPos).init(allocator);
+    var toVisit = utils.Queue(ScreenPos).init(allocator);
     defer toVisit.deinit();
 
     try toVisit.enqueue(goal);

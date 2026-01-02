@@ -4,6 +4,7 @@ const grid = @import("map/grid.zig");
 const map = @import("map/map.zig");
 const pathfinding = @import("pathfinding.zig");
 const selection = @import("selection.zig");
+const utils = @import("utils.zig");
 
 const rl = grid.rl;
 const ScreenPos = types.ScreenPos;
@@ -195,7 +196,12 @@ pub fn main() !void {
             // path assignment
             var idx: usize = 0;
 
-            var occupiedMap = std.AutoHashMap(ScreenPos, void).init(allocator); // eventually replace with time-keyed map
+            // could switch everything to arena allocators eventually
+            var arena = std.heap.ArenaAllocator.init(allocator);
+            defer arena.deinit();
+            const map_alloc = arena.allocator();
+
+            var occupiedMap = std.AutoHashMap(ScreenPos, std.AutoHashMap(i32, void)).init(map_alloc);
 
             for (agents.items) |*agent| {
                 if (agent.selected) {
@@ -207,10 +213,19 @@ pub fn main() !void {
                     const maxPathLen: usize = @intCast(@divTrunc(screenHeight, gridSize) + @divTrunc(screenWidth, gridSize));
                     agent.path = pathfinding.getPathAstar(agentPosCenter, goal, gridSize, &pathfinding.crossDiagonalMovement, &obstacleGrid, allocator, maxPathLen, occupiedMap) catch null;
                     if (agent.path) |*p| {
-                        // add all parts of path to occupancy
-                        for (p.items) |node| {
-                            try occupiedMap.put(node, {});
+                        var node_idx: i32 = 0;
+                        // bug with end of paths
+                        while (node_idx < p.items.len) : (node_idx += 1) {
+                            const node = p.items[@intCast(node_idx)];
+                            if (occupiedMap.getPtr(node)) |times| {
+                                try times.put(node_idx, {});
+                            } else {
+                                var newMap = std.AutoHashMap(i32, void).init(map_alloc);
+                                try newMap.put(node_idx, {});
+                                try occupiedMap.put(node, newMap);
+                            }
                         }
+
                         if (p.items.len > 0) _ = p.orderedRemove(0);
                     }
                     idx += 1;
@@ -271,9 +286,9 @@ pub fn main() !void {
                             }
 
                             // if so, wait
-                            if (tooClose) {
-                                continue;
-                            }
+                            // if (tooClose) {
+                            //     continue;
+                            // }
 
                             agent.pos.x = next_pos_x;
                             agent.pos.y = next_pos_y;
