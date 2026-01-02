@@ -2,6 +2,7 @@ const std = @import("std");
 const types = @import("types.zig");
 const grid = @import("map/grid.zig");
 const map = @import("map/map.zig");
+const queue = @import("queue.zig");
 pub const rl = @cImport({
     @cInclude("raylib.h");
     @cInclude("raymath.h");
@@ -162,15 +163,16 @@ pub fn getGroupGoals(obstacles: *ObstacleGrid, goal: ScreenPos, count: i32, grid
 
     var taken = std.AutoHashMap(ScreenPos, void).init(allocator);
 
-    var toVisit = std.ArrayList(ScreenPos).empty;
-    defer toVisit.deinit(allocator);
+    // should be a bfs, so a queue not a stack
+    var toVisit = queue.Queue(ScreenPos).init(allocator);
+    defer toVisit.deinit();
 
-    try toVisit.append(allocator, goal);
+    try toVisit.enqueue(goal);
     try taken.put(goal, {});
 
     // bfs to grab from the nearby
     while (goals.items.len < count) {
-        const curr = toVisit.pop().?;
+        const curr = toVisit.dequeue().?;
 
         if (obstacles.obstacles.get(map.screenToGridCoord(curr, gridSize))) |height| {
             if (height >= 3) {
@@ -186,7 +188,7 @@ pub fn getGroupGoals(obstacles: *ObstacleGrid, goal: ScreenPos, count: i32, grid
             // no limits right now
             if (taken.get(movedPoint)) |_| {} else {
                 try taken.put(movedPoint, {});
-                try toVisit.append(allocator, movedPoint);
+                try toVisit.enqueue(movedPoint);
             }
         }
     }
