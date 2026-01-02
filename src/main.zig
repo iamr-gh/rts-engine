@@ -221,10 +221,9 @@ pub fn main() !void {
 
         const deltaTime = rl.GetFrameTime();
 
+        // moving along each path
         for (agents.items) |*agent| {
             if (agent.path) |*p| {
-                // moving along path
-                // removes each element as it gets there
                 if (p.items.len > 0) {
                     const nextPoint = p.items[0];
                     const dx: f32 = @floatFromInt(nextPoint.x - agent.pos.x);
@@ -242,8 +241,33 @@ pub fn main() !void {
                             }
                         } else {
                             const ratio = moveAmount / distance;
-                            agent.pos.x += @as(i32, @intFromFloat(dx * ratio));
-                            agent.pos.y += @as(i32, @intFromFloat(dy * ratio));
+                            const next_pos_x = agent.pos.x + @as(i32, @intFromFloat(dx * ratio));
+                            const next_pos_y = agent.pos.y + @as(i32, @intFromFloat(dy * ratio));
+
+                            const safeDistance = 2 * moveAmount;
+
+                            // check if other agent is there
+                            var tooClose = false;
+                            for (agents.items) |*other_agent| {
+                                if (other_agent != agent) {
+                                    const agent_dx: f32 = @floatFromInt(other_agent.pos.x - agent.pos.x);
+                                    const agent_dy: f32 = @floatFromInt(other_agent.pos.y - agent.pos.y);
+                                    const agent_distance = std.math.sqrt(agent_dx * agent_dx + agent_dy * agent_dy);
+
+                                    // deadlock
+                                    if (agent_distance <= safeDistance) {
+                                        tooClose = true;
+                                    }
+                                }
+                            }
+
+                            // if so, wait
+                            if (tooClose) {
+                                continue;
+                            }
+
+                            agent.pos.x = next_pos_x;
+                            agent.pos.y = next_pos_y;
                         }
                     }
                 }

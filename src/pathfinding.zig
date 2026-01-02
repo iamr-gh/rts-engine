@@ -63,6 +63,21 @@ pub fn getPathGreedy(start: ScreenPos, end: ScreenPos, gridSize: i32, movement: 
     return pathList;
 }
 
+pub fn isValidMove(curr: ScreenPos, next: ScreenPos, obstacleGrid: *const ObstacleGrid, gridSize: i32) bool {
+    const neigh_height = obstacleGrid.obstacles.get(map.screenToGridCoord(next, gridSize)) orelse 0;
+    const too_high = neigh_height >= 3;
+
+    const height = obstacleGrid.obstacles.get(map.screenToGridCoord(curr, gridSize)) orelse 0;
+    const too_steep = @abs(height - neigh_height) > 1;
+
+    const good_diagonal = map.canMoveDiagonal(curr, next, gridSize, obstacleGrid);
+
+    const neighborSquare = grid.getSquareInGrid(gridSize, next);
+    const out_of_bounds = neighborSquare.x < 0 or neighborSquare.y < 0; // could be expanded
+
+    return !too_high and !too_steep and good_diagonal and !out_of_bounds;
+}
+
 pub fn getPathAstar(start: ScreenPos, end: ScreenPos, gridSize: i32, movement: []const [2]i32, obstacleGrid: *const ObstacleGrid, allocator: std.mem.Allocator, maxPathLen: usize) !std.ArrayList(ScreenPos) {
     std.debug.assert(@mod(start.x, gridSize) == @divFloor(gridSize, 2));
     std.debug.assert(@mod(start.y, gridSize) == @divFloor(gridSize, 2));
@@ -123,15 +138,7 @@ pub fn getPathAstar(start: ScreenPos, end: ScreenPos, gridSize: i32, movement: [
                 .y = current.y + move[1] * gridSize,
             };
 
-            const neigh_height = obstacleGrid.obstacles.get(map.screenToGridCoord(neighbor, gridSize)) orelse 0;
-            if (neigh_height >= 3) continue;
-            const height = obstacleGrid.obstacles.get(map.screenToGridCoord(current, gridSize)) orelse 0;
-            if (@abs(height - neigh_height) > 1) continue;
-
-            if (!map.canMoveDiagonal(current, neighbor, gridSize, obstacleGrid)) continue;
-
-            const neighborSquare = grid.getSquareInGrid(gridSize, neighbor);
-            if (neighborSquare.x < 0 or neighborSquare.y < 0) continue;
+            if (!isValidMove(current, neighbor, obstacleGrid, gridSize)) continue;
 
             const tentativeG = (gScore.get(current) orelse std.math.maxInt(u32)) + 1;
 
