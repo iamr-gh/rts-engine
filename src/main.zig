@@ -202,6 +202,7 @@ pub fn main() !void {
             const map_alloc = arena.allocator();
 
             var occupiedMap = std.AutoHashMap(ScreenPos, std.AutoHashMap(i32, void)).init(map_alloc);
+            var finalPositions = std.AutoHashMap(ScreenPos, pathfinding.FinalPosition).init(map_alloc);
 
             for (agents.items) |*agent| {
                 if (agent.selected) {
@@ -211,7 +212,7 @@ pub fn main() !void {
                     const agentSquare = grid.getSquareInGrid(gridSize, agent.pos);
                     const agentPosCenter = grid.getSquareCenter(gridSize, agentSquare);
                     const maxPathLen: usize = @intCast(@divTrunc(screenHeight, gridSize) + @divTrunc(screenWidth, gridSize));
-                    agent.path = pathfinding.getPathAstar(agentPosCenter, goal, gridSize, &pathfinding.crossDiagonalMovement, &obstacleGrid, allocator, maxPathLen, occupiedMap) catch null;
+                    agent.path = pathfinding.getPathAstar(agentPosCenter, goal, gridSize, &pathfinding.crossDiagonalMovement, &obstacleGrid, allocator, maxPathLen, occupiedMap, finalPositions) catch null;
                     if (agent.path) |*p| {
                         var node_idx: i32 = 0;
                         // bug with end of paths
@@ -224,6 +225,13 @@ pub fn main() !void {
                                 try newMap.put(node_idx, {});
                                 try occupiedMap.put(node, newMap);
                             }
+                        }
+
+                        // mark final position as permanently occupied from arrival time onwards
+                        if (p.items.len > 0) {
+                            const final_pos = p.items[p.items.len - 1];
+                            const arrival_time: i32 = @intCast(p.items.len - 1);
+                            try finalPositions.put(final_pos, pathfinding.FinalPosition{ .arrival_time = arrival_time });
                         }
 
                         if (p.items.len > 0) _ = p.orderedRemove(0);

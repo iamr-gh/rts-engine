@@ -22,6 +22,10 @@ const Node = struct {
     parent: ?*Node,
 };
 
+pub const FinalPosition = struct {
+    arrival_time: i32,
+};
+
 pub fn getScore(start: ScreenPos, end: ScreenPos) u32 {
     return @abs(start.x - end.x) + @abs(start.y - end.y);
 }
@@ -79,7 +83,7 @@ pub fn isValidMove(curr: ScreenPos, next: ScreenPos, obstacleGrid: *const Obstac
 }
 
 // occupiedMap could likely switch to a more efficient datastructure
-pub fn getPathAstar(start: ScreenPos, end: ScreenPos, gridSize: i32, movement: []const [2]i32, obstacleGrid: *const ObstacleGrid, allocator: std.mem.Allocator, maxPathLen: usize, occupiedMap: std.AutoHashMap(ScreenPos, std.AutoHashMap(i32, void))) !std.ArrayList(ScreenPos) {
+pub fn getPathAstar(start: ScreenPos, end: ScreenPos, gridSize: i32, movement: []const [2]i32, obstacleGrid: *const ObstacleGrid, allocator: std.mem.Allocator, maxPathLen: usize, occupiedMap: std.AutoHashMap(ScreenPos, std.AutoHashMap(i32, void)), finalPositions: std.AutoHashMap(ScreenPos, FinalPosition)) !std.ArrayList(ScreenPos) {
     std.debug.assert(@mod(start.x, gridSize) == @divFloor(gridSize, 2));
     std.debug.assert(@mod(start.y, gridSize) == @divFloor(gridSize, 2));
     std.debug.assert(@mod(end.x, gridSize) == @divFloor(gridSize, 2));
@@ -150,6 +154,15 @@ pub fn getPathAstar(start: ScreenPos, end: ScreenPos, gridSize: i32, movement: [
             if (occupiedMap.get(neighbor)) |times| {
                 if (timeLookup.get(current)) |time| {
                     if (times.get(time + 1)) |_| {
+                        continue;
+                    }
+                }
+            }
+
+            // check finalPositions for permanent occupancy (agents that have reached their destination)
+            if (finalPositions.get(neighbor)) |final| {
+                if (timeLookup.get(current)) |time| {
+                    if (time + 1 >= final.arrival_time) {
                         continue;
                     }
                 }
