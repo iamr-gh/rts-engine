@@ -181,16 +181,30 @@ pub fn main() !void {
             const goalSquare = grid.getSquareInGrid(gridSize, goalPt);
             const goalSquareCenter = grid.getSquareCenter(gridSize, goalSquare);
 
+            var num_selected: i32 = 0;
+
+            for (agents.items) |*agent| {
+                if (agent.selected) {
+                    num_selected += 1;
+                }
+            }
+
+            const goals = try pathfinding.getGroupGoals(&obstacleGrid, goalSquareCenter, num_selected, gridSize, allocator);
+
+            var idx: usize = 0;
             for (agents.items) |*agent| {
                 if (agent.selected) {
                     if (agent.path) |*p| p.deinit(allocator);
+                    const goal = goals.items[idx];
+
                     const agentSquare = grid.getSquareInGrid(gridSize, agent.pos);
                     const agentPosCenter = grid.getSquareCenter(gridSize, agentSquare);
                     const maxPathLen: usize = @intCast(@divTrunc(screenHeight, gridSize) + @divTrunc(screenWidth, gridSize));
-                    agent.path = pathfinding.getPathAstar(agentPosCenter, goalSquareCenter, gridSize, &pathfinding.crossDiagonalMovement, &obstacleGrid, allocator, maxPathLen) catch null;
+                    agent.path = pathfinding.getPathAstar(agentPosCenter, goal, gridSize, &pathfinding.crossDiagonalMovement, &obstacleGrid, allocator, maxPathLen) catch null;
                     if (agent.path) |*p| {
                         if (p.items.len > 0) _ = p.orderedRemove(0);
                     }
+                    idx += 1;
                 }
             }
             previousTarget = goalSquareCenter;

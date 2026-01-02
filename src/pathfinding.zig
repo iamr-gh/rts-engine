@@ -156,6 +156,44 @@ pub fn getPathAstar(start: ScreenPos, end: ScreenPos, gridSize: i32, movement: [
     return error.NoPathFound;
 }
 
+// can clean up constants
+pub fn getGroupGoals(obstacles: *ObstacleGrid, goal: ScreenPos, count: i32, gridSize: i32, allocator: std.mem.Allocator) !std.ArrayList(ScreenPos) {
+    var goals = std.ArrayList(ScreenPos).empty;
+
+    var taken = std.AutoHashMap(ScreenPos, void).init(allocator);
+
+    var toVisit = std.ArrayList(ScreenPos).empty;
+    defer toVisit.deinit(allocator);
+
+    try toVisit.append(allocator, goal);
+    try taken.put(goal, {});
+
+    // bfs to grab from the nearby
+    while (goals.items.len < count) {
+        const curr = toVisit.pop().?;
+
+        if (obstacles.obstacles.get(map.screenToGridCoord(curr, gridSize))) |height| {
+            if (height >= 3) {
+                continue;
+            }
+        }
+        try goals.append(allocator, curr);
+
+        // use movement iteration
+        for (crossDiagonalMovement) |move| {
+            const movedPoint: ScreenPos = .{ .x = curr.x + move[0] * gridSize, .y = curr.y + move[1] * gridSize };
+
+            // no limits right now
+            if (taken.get(movedPoint)) |_| {} else {
+                try taken.put(movedPoint, {});
+                try toVisit.append(allocator, movedPoint);
+            }
+        }
+    }
+
+    return goals;
+}
+
 pub fn drawPathLines(path: []ScreenPos) void {
     if (path.len < 2) return;
 
