@@ -41,14 +41,14 @@ pub fn main() !void {
 
     const agentSpeed: f32 = 150;
 
-    const NUM_AGENTS: i32 = 5;
+    const NUM_AGENTS: i32 = 100;
 
     var goalPt: ScreenPos = .{ .x = centerX, .y = centerY };
 
-    var gridSize: i32 = 10;
+    var gridSize: i32 = 20;
     const gridChange: i32 = 10;
 
-    var obstacleGrid = try map.generateTerrainObstaclesWithConfig(allocator, gridSize, screenWidth, screenHeight, goalPt, map.terrain.PLAINS);
+    var obstacleGrid = try map.generateTerrainObstaclesWithConfig(allocator, gridSize, screenWidth, screenHeight, goalPt, map.terrain.CANYON_MOUNTAIN_RANGE);
     var prevGridSize = gridSize;
 
     const colors = [_]rl.Color{ rl.RED, rl.GREEN, rl.BLUE, rl.ORANGE, rl.PURPLE, rl.GOLD, rl.VIOLET, rl.MAROON, rl.SKYBLUE, rl.DARKGRAY };
@@ -138,7 +138,7 @@ pub fn main() !void {
 
         if (gridSize != prevGridSize) {
             obstacleGrid.deinit();
-            obstacleGrid = try map.generateTerrainObstaclesWithConfig(allocator, gridSize, screenWidth, screenHeight, goalPt, map.terrain.PLAINS);
+            obstacleGrid = try map.generateTerrainObstaclesWithConfig(allocator, gridSize, screenWidth, screenHeight, goalPt, map.terrain.CANYON_MOUNTAIN_RANGE);
             for (agents.items) |*agent| {
                 const square = grid.getSquareInGrid(gridSize, agent.pos);
                 agent.pos = grid.getSquareCenter(gridSize, square);

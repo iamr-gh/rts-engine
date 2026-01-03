@@ -69,7 +69,7 @@ pub fn getPathGreedy(start: ScreenPos, end: ScreenPos, gridSize: i32, movement: 
 
 pub fn isValidMove(curr: ScreenPos, next: ScreenPos, obstacleGrid: *const ObstacleGrid, gridSize: i32) bool {
     const neigh_height = obstacleGrid.obstacles.get(map.screenToGridCoord(next, gridSize)) orelse 0;
-    const too_high = neigh_height >= 3;
+    const too_high = neigh_height >= 4;
 
     const height = obstacleGrid.obstacles.get(map.screenToGridCoord(curr, gridSize)) orelse 0;
     const too_steep = @abs(height - neigh_height) > 1;
@@ -223,7 +223,7 @@ pub fn getGroupGoals(obstacles: *ObstacleGrid, goal: ScreenPos, count: i32, grid
         }
 
         if (obstacles.obstacles.get(map.screenToGridCoord(curr, gridSize))) |height| {
-            if (height >= 3) {
+            if (height >= 4) {
                 continue;
             }
         }

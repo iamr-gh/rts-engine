@@ -33,20 +33,6 @@ pub const ObstacleGrid = struct {
         _ = self.obstacles.remove(coord);
     }
 
-    pub fn toggle(self: *ObstacleGrid, coord: GridCoord) !void {
-        const maxHeight: i32 = 3;
-
-        if (self.obstacles.get(coord)) |height| {
-            if (height == 1) {
-                _ = self.obstacles.remove(coord);
-            } else {
-                try self.obstacles.put(coord, height - 1);
-            }
-        } else {
-            try self.obstacles.put(coord, maxHeight);
-        }
-    }
-
     pub fn contains(self: *const ObstacleGrid, coord: GridCoord) bool {
         return self.obstacles.contains(coord);
     }
@@ -99,6 +85,9 @@ pub fn generateTerrainObstaclesWithConfig(allocator: std.mem.Allocator, gridSize
     const heightmap = try terrain.generateHeightmap(allocator, numColsUsize, numRowsUsize, config);
     defer terrain.freeHeightmap(allocator, heightmap);
 
+    const features = terrain.getCanyonMountainRangeFeatures();
+    terrain.applyFeaturesToHeightmap(heightmap, features);
+
     var obstacleGrid = ObstacleGrid.init(allocator);
     errdefer obstacleGrid.deinit();
 
@@ -111,14 +100,11 @@ pub fn generateTerrainObstaclesWithConfig(allocator: std.mem.Allocator, gridSize
             if (std.meta.eql(center, excludePos)) continue;
 
             const height = heightmap[row][col];
-            const terrainType = terrain.getTerrainType(height, config);
+            const obstacleHeight = terrain.getMountainHeight(height, config);
 
-            const obstacleHeight: i32 = switch (terrainType) {
-                .flat => continue,
-                .hill => 1,
-                .mountain => 2,
-                .peak => 3,
-            };
+            if (obstacleHeight == 0) {
+                continue;
+            }
 
             try obstacleGrid.obstacles.put(.{ .x = @as(i32, @intCast(col)), .y = @as(i32, @intCast(row)) }, obstacleHeight);
         }
@@ -176,9 +162,10 @@ pub fn drawObstacles(obstacleGrid: *const ObstacleGrid, gridSize: i32) void {
         const y = coord.y * gridSize;
 
         switch (entry.value_ptr.*) {
-            1 => rl.DrawRectangle(x, y, gridSize, gridSize, rl.WHITE),
+            1 => rl.DrawRectangle(x, y, gridSize, gridSize, rl.LIGHTGRAY),
             2 => rl.DrawRectangle(x, y, gridSize, gridSize, rl.GRAY),
-            3 => rl.DrawRectangle(x, y, gridSize, gridSize, rl.BLACK),
+            3 => rl.DrawRectangle(x, y, gridSize, gridSize, rl.DARKGRAY),
+            4 => rl.DrawRectangle(x, y, gridSize, gridSize, rl.BLACK),
             else => {},
         }
     }
