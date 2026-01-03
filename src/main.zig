@@ -48,7 +48,7 @@ pub fn main() !void {
     var gridSize: i32 = 20;
     const gridChange: i32 = 10;
 
-    var obstacleGrid = try map.generateTerrainObstaclesWithConfig(allocator, gridSize, screenWidth, screenHeight, goalPt, map.terrain.CANYON_MOUNTAIN_RANGE);
+    var obstacleGrid = try map.generateTerrainObstaclesWithConfig(allocator, gridSize, screenWidth, screenHeight, goalPt, map.terrain.MOUNTAINOUS);
     var prevGridSize = gridSize;
 
     const colors = [_]rl.Color{ rl.RED, rl.GREEN, rl.BLUE, rl.ORANGE, rl.PURPLE, rl.GOLD, rl.VIOLET, rl.MAROON, rl.SKYBLUE, rl.DARKGRAY };
@@ -138,7 +138,7 @@ pub fn main() !void {
 
         if (gridSize != prevGridSize) {
             obstacleGrid.deinit();
-            obstacleGrid = try map.generateTerrainObstaclesWithConfig(allocator, gridSize, screenWidth, screenHeight, goalPt, map.terrain.CANYON_MOUNTAIN_RANGE);
+            obstacleGrid = try map.generateTerrainObstaclesWithConfig(allocator, gridSize, screenWidth, screenHeight, goalPt, map.terrain.PLAINS);
             for (agents.items) |*agent| {
                 const square = grid.getSquareInGrid(gridSize, agent.pos);
                 agent.pos = grid.getSquareCenter(gridSize, square);
@@ -211,7 +211,9 @@ pub fn main() !void {
 
                     const agentSquare = grid.getSquareInGrid(gridSize, agent.pos);
                     const agentPosCenter = grid.getSquareCenter(gridSize, agentSquare);
-                    const maxPathLen: usize = @intCast(@divTrunc(screenHeight, gridSize) + @divTrunc(screenWidth, gridSize));
+                    var maxPathLen: usize = @intCast(@divTrunc(screenHeight, gridSize) + @divTrunc(screenWidth, gridSize));
+                    maxPathLen *= 2; // hotfix, I thought previous was a good enough bound
+
                     agent.path = pathfinding.getPathAstar(agentPosCenter, goal, gridSize, &pathfinding.crossDiagonalMovement, &obstacleGrid, allocator, maxPathLen, occupiedMap, finalPositions) catch null;
                     if (agent.path) |*p| {
                         var node_idx: i32 = 0;
