@@ -211,13 +211,6 @@ pub fn getGroupGoals(obstacles: *ObstacleGrid, goal: ScreenPos, count: i32, grid
     while (goals.items.len < count) {
         const curr = toVisit.dequeue().?;
 
-        if (obstacles.obstacles.get(map.screenToGridCoord(curr, gridSize))) |height| {
-            if (height >= 3) {
-                continue;
-            }
-        }
-        try goals.append(allocator, curr);
-
         // use movement iteration
         for (crossDiagonalMovement) |move| {
             const movedPoint: ScreenPos = .{ .x = curr.x + move[0] * gridSize, .y = curr.y + move[1] * gridSize };
@@ -228,6 +221,14 @@ pub fn getGroupGoals(obstacles: *ObstacleGrid, goal: ScreenPos, count: i32, grid
                 try toVisit.enqueue(movedPoint);
             }
         }
+
+        if (obstacles.obstacles.get(map.screenToGridCoord(curr, gridSize))) |height| {
+            if (height >= 3) {
+                continue;
+            }
+        }
+
+        try goals.append(allocator, curr);
     }
 
     return goals;
