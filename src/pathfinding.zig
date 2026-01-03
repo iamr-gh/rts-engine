@@ -12,8 +12,7 @@ pub const rl = @cImport({
 const ScreenPos = types.ScreenPos;
 const ObstacleGrid = map.ObstacleGrid;
 
-pub const crossMovement: [4][2]i32 = .{ .{ 0, 1 }, .{ 1, 0 }, .{ 0, -1 }, .{ -1, 0 } };
-pub const crossDiagonalMovement: [8][2]i32 = .{ .{ 1, 1 }, .{ -1, -1 }, .{ 1, -1 }, .{ -1, 1 }, .{ 0, 1 }, .{ 0, -1 }, .{ 1, 0 }, .{ -1, 0 } };
+pub const hexMovement: [6][2]i32 = .{ .{ 1, 0 }, .{ 1, -1 }, .{ 0, -1 }, .{ -1, 0 }, .{ -1, 1 }, .{ 0, 1 } };
 
 const Node = struct {
     pos: ScreenPos,
@@ -26,15 +25,17 @@ pub const FinalPosition = struct {
     arrival_time: i32,
 };
 
-pub fn getScore(start: ScreenPos, end: ScreenPos) u32 {
-    return @abs(start.x - end.x) + @abs(start.y - end.y);
+pub fn getScore(start: ScreenPos, end: ScreenPos, gridSize: i32) u32 {
+    const startHex = grid.getHexContainingPos(start, gridSize);
+    const endHex = grid.getHexContainingPos(end, gridSize);
+    return @intCast(grid.hexDistance(startHex, endHex));
 }
 
 pub fn getPathGreedy(start: ScreenPos, end: ScreenPos, gridSize: i32, movement: []const [2]i32, allocator: std.mem.Allocator) !std.ArrayList(ScreenPos) {
-    std.debug.assert(@mod(start.x, gridSize) == @divFloor(gridSize, 2));
-    std.debug.assert(@mod(start.y, gridSize) == @divFloor(gridSize, 2));
-    std.debug.assert(@mod(end.x, gridSize) == @divFloor(gridSize, 2));
-    std.debug.assert(@mod(end.y, gridSize) == @divFloor(gridSize, 2));
+    const startHex = grid.getHexContainingPos(start, gridSize);
+    const endHex = grid.getHexContainingPos(end, gridSize);
+    _ = startHex;
+    _ = endHex;
 
     var pathList = std.ArrayList(ScreenPos).empty;
     var current = start;
@@ -48,18 +49,27 @@ pub fn getPathGreedy(start: ScreenPos, end: ScreenPos, gridSize: i32, movement: 
         try pathList.append(allocator, current);
 
         var bestMovement = movement[0];
-        var bestScore = getScore(current, end);
+        var bestScore = getScore(current, end, gridSize);
         for (movement) |move| {
-            const movedPoint: ScreenPos = .{ .x = current.x + move[0] * gridSize, .y = current.y + move[1] * gridSize };
-            const score = getScore(movedPoint, end);
+            const currentAxial = grid.getHexContainingPos(current, gridSize);
+            const movedAxial = [2]i32{
+                currentAxial[0] + move[0],
+                currentAxial[1] + move[1],
+            };
+            const movedPoint = grid.axialToScreen(movedAxial[0], movedAxial[1], gridSize);
+            const score = getScore(movedPoint, end, gridSize);
             if (score < bestScore) {
                 bestMovement = move;
                 bestScore = score;
             }
         }
 
-        next.x += bestMovement[0] * gridSize;
-        next.y += bestMovement[1] * gridSize;
+        const nextAxial = grid.getHexContainingPos(next, gridSize);
+        const targetAxial = [2]i32{
+            nextAxial[0] + bestMovement[0],
+            nextAxial[1] + bestMovement[1],
+        };
+        next = grid.axialToScreen(targetAxial[0], targetAxial[1], gridSize);
         current = next;
     }
     try pathList.append(allocator, end);
@@ -74,21 +84,13 @@ pub fn isValidMove(curr: ScreenPos, next: ScreenPos, obstacleGrid: *const Obstac
     const height = obstacleGrid.obstacles.get(map.screenToGridCoord(curr, gridSize)) orelse 0;
     const too_steep = @abs(height - neigh_height) > 1;
 
-    const good_diagonal = map.canMoveDiagonal(curr, next, gridSize, obstacleGrid);
+    const out_of_bounds = false;
 
-    const neighborSquare = grid.getSquareInGrid(gridSize, next);
-    const out_of_bounds = neighborSquare.x < 0 or neighborSquare.y < 0; // could be expanded
-
-    return !too_high and !too_steep and good_diagonal and !out_of_bounds;
+    return !too_high and !too_steep and !out_of_bounds;
 }
 
 // occupiedMap could likely switch to a more efficient datastructure
 pub fn getPathAstar(start: ScreenPos, end: ScreenPos, gridSize: i32, movement: []const [2]i32, obstacleGrid: *const ObstacleGrid, allocator: std.mem.Allocator, maxPathLen: usize, occupiedMap: std.AutoHashMap(ScreenPos, std.AutoHashMap(i32, void)), finalPositions: std.AutoHashMap(ScreenPos, FinalPosition)) !std.ArrayList(ScreenPos) {
-    std.debug.assert(@mod(start.x, gridSize) == @divFloor(gridSize, 2));
-    std.debug.assert(@mod(start.y, gridSize) == @divFloor(gridSize, 2));
-    std.debug.assert(@mod(end.x, gridSize) == @divFloor(gridSize, 2));
-    std.debug.assert(@mod(end.y, gridSize) == @divFloor(gridSize, 2));
-
     var openSet = std.ArrayList(ScreenPos).empty;
     defer openSet.deinit(allocator);
 
@@ -103,7 +105,7 @@ pub fn getPathAstar(start: ScreenPos, end: ScreenPos, gridSize: i32, movement: [
 
     try openSet.append(allocator, start);
     try gScore.put(start, 0);
-    try fScore.put(start, getScore(start, end));
+    try fScore.put(start, getScore(start, end, gridSize));
 
     const max_iters: usize = 10000;
     var iters: usize = 0;
@@ -143,10 +145,12 @@ pub fn getPathAstar(start: ScreenPos, end: ScreenPos, gridSize: i32, movement: [
         }
 
         for (movement) |move| {
-            const neighbor: ScreenPos = .{
-                .x = current.x + move[0] * gridSize,
-                .y = current.y + move[1] * gridSize,
+            const currentAxial = grid.getHexContainingPos(current, gridSize);
+            const neighborAxial = [2]i32{
+                currentAxial[0] + move[0],
+                currentAxial[1] + move[1],
             };
+            const neighbor = grid.axialToScreen(neighborAxial[0], neighborAxial[1], gridSize);
 
             if (!isValidMove(current, neighbor, obstacleGrid, gridSize)) continue;
 
@@ -175,7 +179,7 @@ pub fn getPathAstar(start: ScreenPos, end: ScreenPos, gridSize: i32, movement: [
                 try timeLookup.put(neighbor, timeLookup.get(current).? + 1);
 
                 try gScore.put(neighbor, tentativeG);
-                try fScore.put(neighbor, tentativeG + getScore(neighbor, end));
+                try fScore.put(neighbor, tentativeG + getScore(neighbor, end, gridSize));
 
                 var found = false;
                 for (openSet.items) |pos| {
@@ -212,8 +216,13 @@ pub fn getGroupGoals(obstacles: *ObstacleGrid, goal: ScreenPos, count: i32, grid
         const curr = toVisit.dequeue().?;
 
         // use movement iteration
-        for (crossDiagonalMovement) |move| {
-            const movedPoint: ScreenPos = .{ .x = curr.x + move[0] * gridSize, .y = curr.y + move[1] * gridSize };
+        for (hexMovement) |move| {
+            const currAxial = grid.getHexContainingPos(curr, gridSize);
+            const movedAxial = [2]i32{
+                currAxial[0] + move[0],
+                currAxial[1] + move[1],
+            };
+            const movedPoint = grid.axialToScreen(movedAxial[0], movedAxial[1], gridSize);
 
             // no limits right now
             if (taken.get(movedPoint)) |_| {} else {

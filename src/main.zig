@@ -70,11 +70,16 @@ pub fn main() !void {
         var valid = false;
         var attempts: i32 = 0;
 
+        const hexWidth: f32 = @as(f32, @floatFromInt(gridSize)) * 0.75;
+        const hexHeight: f32 = @as(f32, @floatFromInt(gridSize)) * std.math.sqrt(3.0) / 2.0;
+        const numCols: i32 = @intFromFloat(@as(f32, @floatFromInt(screenWidth)) / hexWidth);
+        const numRows: i32 = @intFromFloat(@as(f32, @floatFromInt(screenHeight)) / hexHeight);
+
         while (!valid and attempts < 100) : (attempts += 1) {
-            agentPos.x = random.intRangeAtMost(i32, 0, screenWidth - gridSize);
-            agentPos.y = random.intRangeAtMost(i32, 0, screenHeight - gridSize);
-            const square = grid.getSquareInGrid(gridSize, agentPos);
-            agentPos = grid.getSquareCenter(gridSize, square);
+            const col = random.intRangeAtMost(i32, 0, numCols - 1);
+            const row = random.intRangeAtMost(i32, 0, numRows - 1);
+            const axial = grid.offsetToAxial(col, row);
+            agentPos = grid.axialToScreen(axial[0], axial[1], gridSize);
 
             if (map.isObstacle(&obstacleGrid, agentPos, gridSize)) {
                 continue;
@@ -140,8 +145,8 @@ pub fn main() !void {
             obstacleGrid.deinit();
             obstacleGrid = try map.generateTerrainObstaclesWithConfig(allocator, gridSize, screenWidth, screenHeight, goalPt, map.terrain.PLAINS);
             for (agents.items) |*agent| {
-                const square = grid.getSquareInGrid(gridSize, agent.pos);
-                agent.pos = grid.getSquareCenter(gridSize, square);
+                const axial = grid.getHexContainingPos(agent.pos, gridSize);
+                agent.pos = grid.axialToScreen(axial[0], axial[1], gridSize);
                 if (agent.path) |*p| {
                     p.deinit(allocator);
                     agent.path = null;
@@ -178,10 +183,12 @@ pub fn main() !void {
         if (rl.IsMouseButtonPressed(rl.MOUSE_RIGHT_BUTTON)) {
             goalPt.x = rl.GetMouseX();
             goalPt.y = rl.GetMouseY();
+        }
 
-            const goalSquare = grid.getSquareInGrid(gridSize, goalPt);
-            const goalSquareCenter = grid.getSquareCenter(gridSize, goalSquare);
+        const axial = grid.getHexContainingPos(goalPt, gridSize);
+        const goalHexCenter = grid.axialToScreen(axial[0], axial[1], gridSize);
 
+        if (rl.IsMouseButtonPressed(rl.MOUSE_RIGHT_BUTTON)) {
             var num_selected: i32 = 0;
 
             for (agents.items) |*agent| {
@@ -191,7 +198,7 @@ pub fn main() !void {
             }
 
             // goal allocation
-            const goals = try pathfinding.getGroupGoals(&obstacleGrid, goalSquareCenter, num_selected, gridSize, allocator);
+            const goals = try pathfinding.getGroupGoals(&obstacleGrid, goalHexCenter, num_selected, gridSize, allocator);
 
             // path assignment
             var idx: usize = 0;
@@ -208,13 +215,13 @@ pub fn main() !void {
                 if (agent.selected) {
                     if (agent.path) |*p| p.deinit(allocator);
                     const goal = goals.items[idx];
+                    _ = goal;
 
-                    const agentSquare = grid.getSquareInGrid(gridSize, agent.pos);
-                    const agentPosCenter = grid.getSquareCenter(gridSize, agentSquare);
+                    const agentAxial = grid.getHexContainingPos(agent.pos, gridSize);
                     var maxPathLen: usize = @intCast(@divTrunc(screenHeight, gridSize) + @divTrunc(screenWidth, gridSize));
                     maxPathLen *= 2; // hotfix, I thought previous was a good enough bound
 
-                    agent.path = pathfinding.getPathAstar(agentPosCenter, goal, gridSize, &pathfinding.crossDiagonalMovement, &obstacleGrid, allocator, maxPathLen, occupiedMap, finalPositions) catch null;
+                    agent.path = pathfinding.getPathAstar(grid.axialToScreen(agentAxial[0], agentAxial[1], gridSize), goalHexCenter, gridSize, &pathfinding.hexMovement, &obstacleGrid, allocator, maxPathLen, occupiedMap, finalPositions) catch null;
                     if (agent.path) |*p| {
                         var node_idx: i32 = 0;
                         // bug with end of paths
@@ -241,16 +248,13 @@ pub fn main() !void {
                     idx += 1;
                 }
             }
-            previousTarget = goalSquareCenter;
+            previousTarget = goalHexCenter;
         }
 
-        const goalSquare = grid.getSquareInGrid(gridSize, goalPt);
-        const goalSquareCenter = grid.getSquareCenter(gridSize, goalSquare);
-
-        if (map.isObstacle(&obstacleGrid, goalSquareCenter, gridSize)) {
-            rl.DrawRectangle(goalSquare.x, goalSquare.y, gridSize, gridSize, rl.RED);
+        if (map.isObstacle(&obstacleGrid, goalHexCenter, gridSize)) {
+            grid.drawHex(goalHexCenter, gridSize, .{ .r = 255, .g = 0, .b = 0, .a = 255 });
         } else {
-            rl.DrawRectangle(goalSquare.x, goalSquare.y, gridSize, gridSize, rl.GREEN);
+            grid.drawHex(goalHexCenter, gridSize, .{ .r = 0, .g = 255, .b = 0, .a = 255 });
         }
 
         const deltaTime = rl.GetFrameTime();
@@ -309,7 +313,7 @@ pub fn main() !void {
             }
         }
 
-        grid.printGrid(gridSize, 0, @max(screenWidth, screenHeight));
+        grid.printHexGrid(gridSize, screenWidth, screenHeight);
 
         map.drawObstacles(&obstacleGrid, gridSize);
         selection.drawBox(box);

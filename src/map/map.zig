@@ -45,17 +45,18 @@ pub fn generateRandomObstacles(allocator: std.mem.Allocator, gridSize: i32, scre
     var obstacleGrid = ObstacleGrid.init(allocator);
     errdefer obstacleGrid.deinit();
 
-    const numCols = @divFloor(screenWidth, gridSize);
-    const numRows = @divFloor(screenHeight, gridSize);
+    const hexWidth: f32 = @as(f32, @floatFromInt(gridSize)) * 0.75;
+    const hexHeight: f32 = @as(f32, @floatFromInt(gridSize)) * std.math.sqrt(3.0) / 2.0;
+    const numCols: i32 = @intFromFloat(@as(f32, @floatFromInt(screenWidth)) / hexWidth);
+    const numRows: i32 = @intFromFloat(@as(f32, @floatFromInt(screenHeight)) / hexHeight);
 
     const numColsUsize: usize = @intCast(numCols);
     const numRowsUsize: usize = @intCast(numRows);
 
     for (0..numColsUsize) |col| {
         for (0..numRowsUsize) |row| {
-            const gridX = @as(i32, @intCast(col)) * gridSize;
-            const gridY = @as(i32, @intCast(row)) * gridSize;
-            const center = grid.getSquareCenter(gridSize, .{ .x = gridX, .y = gridY });
+            const axial = grid.offsetToAxial(@intCast(col), @intCast(row));
+            const center = grid.axialToScreen(axial[0], axial[1], gridSize);
 
             if (std.meta.eql(center, excludePos)) continue;
 
@@ -76,8 +77,10 @@ pub fn generateTerrainObstacles(allocator: std.mem.Allocator, gridSize: i32, scr
 }
 
 pub fn generateTerrainObstaclesWithConfig(allocator: std.mem.Allocator, gridSize: i32, screenWidth: i32, screenHeight: i32, excludePos: ScreenPos, config: terrain.TerrainConfig) !ObstacleGrid {
-    const numCols = @divFloor(screenWidth, gridSize);
-    const numRows = @divFloor(screenHeight, gridSize);
+    const hexWidth: f32 = @as(f32, @floatFromInt(gridSize)) * 0.75;
+    const hexHeight: f32 = @as(f32, @floatFromInt(gridSize)) * std.math.sqrt(3.0) / 2.0;
+    const numCols: i32 = @intFromFloat(@as(f32, @floatFromInt(screenWidth)) / hexWidth);
+    const numRows: i32 = @intFromFloat(@as(f32, @floatFromInt(screenHeight)) / hexHeight);
 
     const numColsUsize: usize = @intCast(numCols);
     const numRowsUsize: usize = @intCast(numRows);
@@ -93,9 +96,8 @@ pub fn generateTerrainObstaclesWithConfig(allocator: std.mem.Allocator, gridSize
 
     for (0..numColsUsize) |col| {
         for (0..numRowsUsize) |row| {
-            const gridX = @as(i32, @intCast(col)) * gridSize;
-            const gridY = @as(i32, @intCast(row)) * gridSize;
-            const center = grid.getSquareCenter(gridSize, .{ .x = gridX, .y = gridY });
+            const axial = grid.offsetToAxial(@intCast(col), @intCast(row));
+            const center = grid.axialToScreen(axial[0], axial[1], gridSize);
 
             if (std.meta.eql(center, excludePos)) continue;
 
@@ -114,58 +116,30 @@ pub fn generateTerrainObstaclesWithConfig(allocator: std.mem.Allocator, gridSize
 }
 
 pub fn screenToGridCoord(screenPos: ScreenPos, gridSize: i32) GridCoord {
-    const gridSquare = grid.getSquareInGrid(gridSize, screenPos);
-    const coord = GridCoord{
-        .x = @divFloor(gridSquare.x, gridSize),
-        .y = @divFloor(gridSquare.y, gridSize),
-    };
-    return coord;
+    const axial = grid.getHexContainingPos(screenPos, gridSize);
+    const offset = grid.axialToOffset(axial[0], axial[1]);
+    return .{ .x = offset[0], .y = offset[1] };
 }
 
 pub fn isObstacle(obstacleGrid: *const ObstacleGrid, screenPos: ScreenPos, gridSize: i32) bool {
-    const gridSquare = grid.getSquareInGrid(gridSize, screenPos);
-    const coord = GridCoord{
-        .x = @divFloor(gridSquare.x, gridSize),
-        .y = @divFloor(gridSquare.y, gridSize),
-    };
+    const axial = grid.getHexContainingPos(screenPos, gridSize);
+    const offset = grid.axialToOffset(axial[0], axial[1]);
+    const coord = GridCoord{ .x = offset[0], .y = offset[1] };
     return obstacleGrid.contains(coord);
-}
-
-pub fn canMoveDiagonal(from: ScreenPos, to: ScreenPos, gridSize: i32, obstacleGrid: *const ObstacleGrid) bool {
-    const dx = to.x - from.x;
-    const dy = to.y - from.y;
-
-    const dxGrid = @divFloor(dx, gridSize);
-    const dyGrid = @divFloor(dy, gridSize);
-
-    if (dxGrid == 0 or dyGrid == 0) {
-        return true;
-    }
-
-    const intermediate1 = ScreenPos{
-        .x = from.x + dxGrid * gridSize,
-        .y = from.y,
-    };
-    const intermediate2 = ScreenPos{
-        .x = from.x,
-        .y = from.y + dyGrid * gridSize,
-    };
-
-    return !isObstacle(obstacleGrid, intermediate1, gridSize) and !isObstacle(obstacleGrid, intermediate2, gridSize);
 }
 
 pub fn drawObstacles(obstacleGrid: *const ObstacleGrid, gridSize: i32) void {
     var iter = obstacleGrid.obstacles.iterator();
     while (iter.next()) |entry| {
         const coord = entry.key_ptr.*;
-        const x = coord.x * gridSize;
-        const y = coord.y * gridSize;
+        const axial = grid.offsetToAxial(coord.x, coord.y);
+        const center = grid.axialToScreen(axial[0], axial[1], gridSize);
 
         switch (entry.value_ptr.*) {
-            1 => rl.DrawRectangle(x, y, gridSize, gridSize, rl.LIGHTGRAY),
-            2 => rl.DrawRectangle(x, y, gridSize, gridSize, rl.GRAY),
-            3 => rl.DrawRectangle(x, y, gridSize, gridSize, rl.DARKGRAY),
-            4 => rl.DrawRectangle(x, y, gridSize, gridSize, rl.BLACK),
+            1 => grid.drawHex(center, gridSize, .{ .r = 200, .g = 200, .b = 200, .a = 255 }),
+            2 => grid.drawHex(center, gridSize, .{ .r = 150, .g = 150, .b = 150, .a = 255 }),
+            3 => grid.drawHex(center, gridSize, .{ .r = 100, .g = 100, .b = 100, .a = 255 }),
+            4 => grid.drawHex(center, gridSize, .{ .r = 50, .g = 50, .b = 50, .a = 255 }),
             else => {},
         }
     }

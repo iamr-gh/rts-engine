@@ -72,7 +72,6 @@ pub fn build(b: *std.Build) void {
 
     exe.root_module.linkLibrary(raylibDep.artifact("raylib"));
 
-
     // This declares intent for the executable to be installed into the
     // standard location when the user invokes the "install" step (the default
     // step when running `zig build`).
@@ -100,6 +99,34 @@ pub fn build(b: *std.Build) void {
     // This will evaluate the `run` step rather than the default, which is "install".
     const run_step = b.step("run", "Run the app");
     run_step.dependOn(&run_cmd.step);
+
+    // Hex test executable for visualization testing
+    const hex_test_mod = b.createModule(.{
+        .root_source_file = b.path("src/hex_test.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    hex_test_mod.addImport("rts_engine_lib", lib_mod);
+
+    const hex_test = b.addExecutable(.{
+        .name = "hex_test",
+        .root_module = hex_test_mod,
+    });
+
+    hex_test.root_module.linkLibrary(raylibDep.artifact("raylib"));
+
+    b.installArtifact(hex_test);
+
+    const run_hex_test = b.addRunArtifact(hex_test);
+
+    run_hex_test.step.dependOn(b.getInstallStep());
+
+    if (b.args) |args| {
+        run_hex_test.addArgs(args);
+    }
+
+    const run_hex_test_step = b.step("hex-test", "Run hex visualization test");
+    run_hex_test_step.dependOn(&run_hex_test.step);
 
     // Creates a step for unit testing. This only builds the test executable
     // but does not run it.
