@@ -1,0 +1,531 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Real-time strategy engine demo with pathfinding, built with Zig and raylib, compiled to WebAssembly" />
+    <meta property="og:title" content="RTS Engine - WebAssembly" />
+    <meta property="og:description" content="Interactive pathfinding demo with 100+ agents" />
+    <title>RTS Engine - WebAssembly</title>
+    <style>
+        * {
+            padding: 0;
+            margin: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background-color: #000;
+            overflow: hidden;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        canvas {
+            display: block;
+            padding: 0;
+            margin: 0;
+            width: 100%;
+            height: 100%;
+        }
+
+        #loading {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: #1a1a2e;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 2000;
+        }
+
+        .spinner {
+            width: 50px;
+            height: 50px;
+            border: 5px solid #f3f3f3;
+            border-top: 5px solid #3498db;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .loading-text {
+            color: white;
+            font-family: sans-serif;
+            font-size: 24px;
+            text-align: center;
+            margin-bottom: 10px;
+        }
+
+        .loading-progress {
+            width: 300px;
+            height: 8px;
+            background: #2d2d3d;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .loading-progress-bar {
+            width: 0%;
+            height: 100%;
+            background: linear-gradient(90deg, #3498db, #56ccf2);
+            animation: load-progress 2s ease-in-out forwards;
+        }
+
+        @keyframes load-progress {
+            0% { width: 0%; }
+            100% { width: 100%; }
+        }
+
+        .build-info {
+            position: fixed;
+            bottom: 10px;
+            left: 10px;
+            background: rgba(26, 26, 46, 0.9);
+            color: white;
+            padding: 12px 16px;
+            border-radius: 8px;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            font-size: 12px;
+            z-index: 100;
+            border: 1px solid #3d3d5c;
+        }
+
+        .build-info h3 {
+            margin: 0 0 8px 0;
+            font-size: 14px;
+            color: #3498db;
+            font-weight: 600;
+        }
+
+        .build-info ul {
+            margin: 0;
+            padding: 0;
+            list-style: none;
+        }
+
+        .build-info li {
+            margin: 4px 0;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .build-info span {
+            color: #a0a0a0;
+        }
+
+        #stats-panel {
+            position: fixed;
+            top: 10px;
+            left: 10px;
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 12px 16px;
+            border-radius: 8px;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            font-size: 12px;
+            z-index: 100;
+            backdrop-filter: blur(4px);
+            min-width: 180px;
+        }
+
+        #stats-panel h4 {
+            margin: 0 0 10px 0;
+            font-size: 13px;
+            color: #3498db;
+            font-weight: 600;
+        }
+
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+            margin: 6px 0;
+        }
+
+        .stat-label {
+            color: #a0a0a0;
+        }
+
+        .stat-value {
+            color: #ffffff;
+            font-weight: 600;
+        }
+
+        #controls-panel {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 12px;
+            border-radius: 8px;
+            font-size: 14px;
+            z-index: 100;
+            backdrop-filter: blur(4px);
+        }
+
+        .control-btn {
+            background: #3498db;
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            margin: 5px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background 0.2s, transform 0.1s;
+            font-size: 13px;
+        }
+
+        .control-btn:hover {
+            background: #2980b9;
+            transform: translateY(-1px);
+        }
+
+        .control-btn:active {
+            transform: translateY(1px);
+        }
+
+        #instructions-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.85);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            backdrop-filter: blur(5px);
+        }
+
+        #instructions-modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: #1a1a2e;
+            color: white;
+            padding: 30px;
+            border-radius: 12px;
+            max-width: 500px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+        }
+
+        .modal-content h2 {
+            margin: 0 0 20px 0;
+            font-size: 24px;
+            color: #3498db;
+        }
+
+        .modal-content h3 {
+            margin: 20px 0 10px 0;
+            font-size: 16px;
+            color: #ffffff;
+        }
+
+        .modal-content p {
+            margin: 8px 0;
+            line-height: 1.5;
+            color: #c0c0c0;
+        }
+
+        .modal-content ul {
+            margin: 10px 0;
+            padding-left: 20px;
+            color: #c0c0c0;
+        }
+
+        .modal-content li {
+            margin: 6px 0;
+        }
+
+        .key-combo {
+            background: #2d2d3d;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: monospace;
+            font-size: 12px;
+        }
+
+        .close-btn {
+            background: #dc3545;
+            color: white;
+            border: none;
+            padding: 10px 24px;
+            margin: 20px 0 0 0;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.2s;
+        }
+
+        .close-btn:hover {
+            background: #b02525;
+        }
+
+        #error-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.9);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 2000;
+        }
+
+        #error-overlay.active {
+            display: flex;
+        }
+
+        .error-content {
+            background: #1a1a2e;
+            color: white;
+            padding: 40px;
+            border-radius: 12px;
+            max-width: 500px;
+            text-align: center;
+            border: 2px solid #dc3545;
+        }
+
+        .error-content h2 {
+            color: #dc3545;
+            margin: 0 0 20px 0;
+            font-size: 24px;
+        }
+
+        .error-content p {
+            margin: 0 0 20px 0;
+            color: #c0c0c0;
+            line-height: 1.6;
+        }
+
+        .retry-btn {
+            background: #3498db;
+            color: white;
+            border: none;
+            padding: 12px 32px;
+            margin: 10px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background 0.2s;
+        }
+
+        .retry-btn:hover {
+            background: #2980b9;
+        }
+    </style>
+</head>
+<body>
+    <div id="loading">
+        <div class="spinner"></div>
+        <div class="loading-text">Loading RTS Engine...</div>
+        <div class="loading-progress">
+            <div class="loading-progress-bar"></div>
+        </div>
+        <p style="color: #808080; margin-top: 20px; font-size: 14px;">
+            Version: dev | Build Date: 2026-01-04
+        </p>
+    </div>
+
+    <canvas id="canvas" oncontextmenu="event.preventDefault()"></canvas>
+
+    <div id="stats-panel" style="display: none;">
+        <h4>Runtime Stats</h4>
+        <div class="stat-row">
+            <span class="stat-label">FPS:</span>
+            <span class="stat-value" id="fps">--</span>
+        </div>
+        <div class="stat-row">
+            <span class="stat-label">Memory:</span>
+            <span class="stat-value" id="memory">-- MB</span>
+        </div>
+        <div class="stat-row">
+            <span class="stat-label">Agents:</span>
+            <span class="stat-value">100</span>
+        </div>
+        <div class="stat-row">
+            <span class="stat-label">Grid Size:</span>
+            <span class="stat-value" id="grid-size">20</span>
+        </div>
+    </div>
+
+    <div id="controls-panel">
+        <button class="control-btn" onclick="toggleFullscreen()">⛶ Fullscreen</button>
+        <button class="control-btn" onclick="location.reload()">↻ Reload</button>
+        <button class="control-btn" onclick="toggleStats()">📊 Stats</button>
+        <button class="control-btn" onclick="toggleInstructions()">❓ Help</button>
+    </div>
+
+    <div id="instructions-modal">
+        <div class="modal-content">
+            <h2>RTS Engine Controls</h2>
+            
+            <h3>🖱️ Mouse Controls</h3>
+            <p>
+                <ul>
+                    <li><strong>Left-click agent:</strong> Select single agent</li>
+                    <li><strong>Drag left-click:</strong> Select multiple agents</li>
+                    <li><strong>Right-click ground:</strong> Move selected agents</li>
+                </ul>
+            </p>
+
+            <h3>⌨️ Keyboard Controls</h3>
+            <p>
+                <ul>
+                    <li><strong><span class="key-combo">←</span> / <span class="key-combo">→</span>:</strong> Decrease/Increase grid size</li>
+                    <li><strong><span class="key-combo">W</span> + <span class="key-combo">Cmd</span> / <span class="key-combo">Ctrl</span>:</strong> Quit</li>
+                </ul>
+            </p>
+
+            <h3>🎮 Gameplay</h3>
+            <p>
+                <ul>
+                    <li>100 agents with different colors</li>
+                    <li>Real-time A* pathfinding</li>
+                    <li>Collision avoidance between agents</li>
+                    <li>Dynamic terrain obstacles</li>
+                </ul>
+            </p>
+
+            <h3>🔧 Technical Info</h3>
+            <p>
+                <ul>
+                    <li>Built with <strong>Zig 0.15</strong></li>
+                    <li>Graphics: <strong>raylib 5.5</strong></li>
+                    <li>Platform: <strong>WebAssembly</strong></li>
+                    <li>Rendering: <strong>WebGL ES 3</strong></li>
+                </ul>
+            </p>
+
+            <button class="close-btn" onclick="toggleInstructions()">Close</button>
+        </div>
+    </div>
+
+    <div id="error-overlay">
+        <div class="error-content">
+            <h2>⚠️ Game Crashed</h2>
+            <p id="error-message">An error occurred while running the game.</p>
+            <button class="retry-btn" onclick="location.reload()">🔄 Reload Page</button>
+        </div>
+    </div>
+
+    <div class="build-info">
+        <h3>📦 Build Information</h3>
+        <ul>
+            <li>Version: <span>dev</span></li>
+            <li>Build Date: <span>2026-01-04</span></li>
+            <li>Git Commit: <span>2e7adeb</span></li>
+            <li>Target: <span>WebAssembly (wasm32-emscripten)</span></li>
+            <li>Optimization: <span>ReleaseFast</span></li>
+        </ul>
+    </div>
+
+    <script type="text/javascript">
+        var statsVisible = false;
+        var frameCount = 0;
+        var lastTime = performance.now();
+
+        var Module = {
+            canvas: document.getElementById("canvas"),
+            
+            onRuntimeInitialized: function() {
+                console.log("RTS Engine initialized successfully");
+                document.getElementById("loading").style.display = "none";
+                document.getElementById("stats-panel").style.display = "block";
+                startFPSCounter();
+                startMemoryMonitor();
+            },
+
+            onAbort: function(error) {
+                console.error("Runtime aborted:", error);
+                document.getElementById("loading").style.display = "none";
+                document.getElementById("error-message").textContent = 
+                    "Runtime error: " + (error || "Unknown error");
+                document.getElementById("error-overlay").classList.add("active");
+            }
+        };
+
+        function startFPSCounter() {
+            setInterval(function() {
+                if (Module._GetFPS) {
+                    const fps = Module._GetFPS();
+                    document.getElementById("fps").textContent = fps.toFixed(1);
+                }
+            }, 500);
+        }
+
+        function startMemoryMonitor() {
+            setInterval(function() {
+                if (performance.memory) {
+                    const memoryMB = (performance.memory.usedJSHeapSize / 1024 / 1024).toFixed(2);
+                    document.getElementById("memory").textContent = memoryMB + " MB";
+                }
+            }, 1000);
+        }
+
+        function toggleFullscreen() {
+            if (!document.fullscreenElement) {
+                if (document.documentElement.requestFullscreen) {
+                    document.documentElement.requestFullscreen();
+                } else if (document.documentElement.webkitRequestFullscreen) {
+                    document.documentElement.webkitRequestFullscreen();
+                } else if (document.documentElement.msRequestFullscreen) {
+                    document.documentElement.msRequestFullscreen();
+                }
+            } else {
+                if (document.exitFullscreen) {
+                    document.exitFullscreen();
+                } else if (document.webkitExitFullscreen) {
+                    document.webkitExitFullscreen();
+                } else if (document.msExitFullscreen) {
+                    document.msExitFullscreen();
+                }
+            }
+        }
+
+        function toggleStats() {
+            statsVisible = !statsVisible;
+            const panel = document.getElementById("stats-panel");
+            panel.style.display = statsVisible ? "block" : "none";
+        }
+
+        function toggleInstructions() {
+            const modal = document.getElementById("instructions-modal");
+            modal.classList.toggle("active");
+        }
+
+        document.addEventListener("keydown", function(event) {
+            if (event.key === "?" || event.key === "/") {
+                event.preventDefault();
+                toggleInstructions();
+            } else if (event.key === "Escape") {
+                const modal = document.getElementById("instructions-modal");
+                if (modal.classList.contains("active")) {
+                    toggleInstructions();
+                }
+            }
+        });
+
+        window.addEventListener("resize", function() {
+            console.log("Canvas resized:", window.innerWidth, "x", window.innerHeight);
+        });
+    </script>
+
+    {{{ SCRIPT }}}
+</body>
+</html>

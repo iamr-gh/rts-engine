@@ -1,0 +1,187 @@
+const std = @import("std");
+const builtin = @import("builtin");
+
+const WebOutputDir = "web";
+
+fn buildDesktop(b: *std.Build, target: anytype, optimize: std.builtin.OptimizeMode) void {
+    const lib_mod = b.createModule(.{
+        .root_source_file = b.path("src/root.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
+    const exe_mod = b.createModule(.{
+        .root_source_file = b.path("src/main.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
+    exe_mod.addImport("rts_engine_lib", lib_mod);
+
+    const lib = b.addLibrary(.{
+        .linkage = .static,
+        .name = "rts_engine",
+        .root_module = lib_mod,
+    });
+
+    b.installArtifact(lib);
+
+    const exe = b.addExecutable(.{
+        .name = "rts_engine",
+        .root_module = exe_mod,
+    });
+
+    const raylibDep = b.dependency("raylib", .{
+        .target = target,
+        .optimize = optimize,
+    });
+
+    exe.root_module.linkLibrary(raylibDep.artifact("raylib"));
+    b.installArtifact(exe);
+
+    const run_cmd = b.addRunArtifact(exe);
+    run_cmd.step.dependOn(b.getInstallStep());
+
+    if (b.args) |args| {
+        run_cmd.addArgs(args);
+    }
+
+    const run_step = b.step("run", "Run the app");
+    run_step.dependOn(&run_cmd.step);
+
+    const lib_unit_tests = b.addTest(.{
+        .root_module = lib_mod,
+    });
+
+    const run_lib_unit_tests = b.addRunArtifact(lib_unit_tests);
+
+    const exe_unit_tests = b.addTest(.{
+        .root_module = exe_mod,
+    });
+
+    const run_exe_unit_tests = b.addRunArtifact(exe_unit_tests);
+
+    const test_step = b.step("test", "Run unit tests");
+    test_step.dependOn(&run_lib_unit_tests.step);
+    test_step.dependOn(&run_exe_unit_tests.step);
+}
+
+fn buildWeb(b: *std.Build, target: anytype, optimize: std.builtin.OptimizeMode) !void {
+    const raylibDep = b.dependency("raylib", .{
+        .target = target,
+        .optimize = optimize,
+    });
+
+    const emsdk = b.lazyDependency("emsdk", .{});
+
+    if (emsdk) |dep| {
+        const dot_emsc_path = dep.path(".emscripten").getPath(b);
+        const dot_emsc_exists = !std.meta.isError(std.fs.accessAbsolute(dot_emsc_path, .{}));
+
+        if (!dot_emsc_exists) {
+            const emsdk_install = b.addSystemCommand(&.{dep.path("emsdk").getPath(b)});
+            emsdk_install.addArgs(&.{ "install", "latest" });
+            const emsdk_activate = b.addSystemCommand(&.{dep.path("emsdk").getPath(b)});
+            emsdk_activate.addArgs(&.{ "activate", "latest" });
+            emsdk_activate.step.dependOn(&emsdk_install.step);
+        }
+
+        const exe_lib = b.addLibrary(.{
+            .name = "rts_engine",
+            .linkage = .static,
+            .root_module = b.createModule(.{
+                .target = target,
+                .optimize = optimize,
+            }),
+        });
+
+        exe_lib.linkLibC();
+        exe_lib.linkLibrary(raylibDep.artifact("raylib"));
+
+        if (b.lazyDependency("emsdk", .{})) |emsdk_dep| {
+            exe_lib.addIncludePath(emsdk_dep.path("upstream/emscripten/cache/sysroot/include"));
+        }
+
+        const emccOutputDir = b.pathJoin(&.{ "zig-out", "htmlout", std.fs.path.sep_str });
+
+        const emccOutputDirExample = b.pathJoin(&.{ emccOutputDir, "rts_engine", std.fs.path.sep_str });
+        const emccOutputDirExampleWithFile = b.pathJoin(&.{ emccOutputDirExample, "index.html" });
+
+        const mkdir_command = switch (builtin.os.tag) {
+            .windows => b.addSystemCommand(&.{ "cmd.exe", "/c", "if", "not", "exist", emccOutputDirExample, "mkdir", emccOutputDirExample }),
+            else => b.addSystemCommand(&.{ "mkdir", "-p", emccOutputDirExample }),
+        };
+
+        const emcc_exe = switch (builtin.os.tag) {
+            .windows => "emcc.bat",
+            else => "emcc",
+        };
+
+        const emcc_exe_path = b.pathJoin(&.{ dep.path("upstream/emscripten").getPath(b), emcc_exe });
+
+        const emcc_command = b.addSystemCommand(&[_][]const u8{emcc_exe_path});
+        emcc_command.step.dependOn(&mkdir_command.step);
+
+        emcc_command.addArgs(&[_][]const u8{
+            "-o",
+            emccOutputDirExampleWithFile,
+            "-sFULL-ES3=1",
+            "-sUSE_GLFW=3",
+            "-sSTACK_OVERFLOW_CHECK=1",
+            "-sEXPORTED_RUNTIME_METHODS=['requestFullscreen']",
+            "--emrun",
+            "-O" ++ switch (optimize) {
+                .Debug => "0",
+                .ReleaseSafe => "2",
+                .ReleaseFast => "3",
+                .ReleaseSmall => "s",
+            },
+            "--preload-file",
+            "src@resources",
+            "--shell-file",
+            b.path("shell.html").getPath(b),
+        });
+
+        const link_items: []const *std.Build.Step.Compile = &.{ raylibDep.artifact("raylib"), exe_lib };
+
+        for (link_items) |item| {
+            emcc_command.addFileArg(item.getEmittedBin());
+            emcc_command.step.dependOn(&item.step);
+        }
+
+        const run_step = try emscriptenRunStep(b, dep, emccOutputDirExampleWithFile);
+        run_step.step.dependOn(&emcc_command.step);
+
+        const run_option = b.step("rts_engine", "rts_engine");
+
+        run_option.dependOn(&run_step.step);
+
+        const install = b.getInstallStep();
+        install.dependOn(&emcc_command.step);
+
+        const web_step = b.step("web", "Build for web");
+        web_step.dependOn(&emcc_command.step);
+
+        const run_web_step = b.step("run-web", "Build and run web version with emrun");
+        run_web_step.dependOn(&emcc_command.step);
+    }
+
+    const install = b.getInstallStep();
+    install.dependOn(&emcc_command.step);
+
+    if (try emscriptenRunStep(b, dep, emccOutputDirExampleWithFile)) |emscripten_setup_step| {
+        run_web_step.dependOn(&emscripten_setup_step.step);
+    }
+
+    pub fn build(b: *std.Build) void {
+    const optimize = b.standardOptimizeOption(.{});
+    const target = b.standardTargetOptions(.{});
+
+    if (target.query.os_tag == .emscripten) {
+        _ = buildWeb(b, target, optimize) catch |err| {
+            std.debug.print("Error building for web: {}\n", .{err});
+        };
+    } else {
+        buildDesktop(b, target, optimize);
+    }
+}
