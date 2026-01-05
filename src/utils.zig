@@ -48,12 +48,25 @@ pub fn partial(comptime args: anytype, comptime f: anytype) partialType(@TypeOf(
     // const args_info = @typeInfo(args);
 
     const output_f_type = @typeInfo(partialType(@TypeOf(args), @TypeOf(f)));
-    // const output_f_inputs = output_f_type.@"fn".params;
+    const output_f_params = output_f_type.@"fn".params;
+
+    var param_types: [output_f_params.len]type = undefined;
+    for (output_f_params, 0..) |param, i| {
+        param_types[i] = param.type.?;
+    }
+
+    const Args = std.meta.Tuple(&param_types);
+
     // const f_info = @typeInfo(f);
     const output_t: type = output_f_type.@"fn".return_type.?;
 
     return struct {
-        pub fn call(user_args: anytype) output_t {
+        pub fn call(user_args: Args) output_t {
+            // this generates the callback?
+            inline for (output_f_params, 0..) |param, i| {
+                std.debug.print("Arg {d} ({}) = {any}\n", i, param.type.?, args[i]);
+            }
+
             // need to create a merged structure based on the inputted params and the user_args
             const total_args = concatTuples(args, user_args);
             @call(.auto, f, total_args);
