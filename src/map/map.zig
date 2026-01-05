@@ -85,8 +85,10 @@ pub fn generateTerrainObstaclesWithConfig(allocator: std.mem.Allocator, gridSize
     const heightmap = try terrain.generateHeightmap(allocator, numColsUsize, numRowsUsize, config);
     defer terrain.freeHeightmap(allocator, heightmap);
 
-    const features = terrain.getCanyonMountainRangeFeatures();
-    terrain.applyFeaturesToHeightmap(heightmap, features);
+    if (std.meta.eql(config, terrain.MOUNTAINOUS) or std.meta.eql(config, terrain.CANYON_MOUNTAIN_RANGE)) {
+        const features = terrain.getCanyonMountainRangeFeatures();
+        terrain.applyFeaturesToHeightmap(heightmap, features);
+    }
 
     var obstacleGrid = ObstacleGrid.init(allocator);
     errdefer obstacleGrid.deinit();

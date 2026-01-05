@@ -2,7 +2,8 @@ const std = @import("std");
 const types = @import("types.zig");
 const grid = @import("map/grid.zig");
 const map = @import("map/map.zig");
-const pathfinding = @import("pathfinding.zig");
+const global_planner = @import("global_planner.zig");
+const local_planner = @import("local_planner.zig");
 const selection = @import("selection.zig");
 const utils = @import("utils.zig");
 
@@ -41,14 +42,14 @@ pub fn main() !void {
 
     const agentSpeed: f32 = 150;
 
-    const NUM_AGENTS: i32 = 100;
+    const NUM_AGENTS: i32 = 1;
 
     var goalPt: ScreenPos = .{ .x = centerX, .y = centerY };
 
     var gridSize: i32 = 20;
     const gridChange: i32 = 10;
 
-    var obstacleGrid = try map.generateTerrainObstaclesWithConfig(allocator, gridSize, screenWidth, screenHeight, goalPt, map.terrain.MOUNTAINOUS);
+    var obstacleGrid = try map.generateTerrainObstaclesWithConfig(allocator, gridSize, screenWidth, screenHeight, goalPt, map.terrain.FOREST);
     var prevGridSize = gridSize;
 
     const colors = [_]rl.Color{ rl.RED, rl.GREEN, rl.BLUE, rl.ORANGE, rl.PURPLE, rl.GOLD, rl.VIOLET, rl.MAROON, rl.SKYBLUE, rl.DARKGRAY };
@@ -191,7 +192,7 @@ pub fn main() !void {
             }
 
             // goal allocation
-            const goals = try pathfinding.getGroupGoals(&obstacleGrid, goalSquareCenter, num_selected, gridSize, allocator);
+            const goals = try global_planner.getGroupGoals(&obstacleGrid, goalSquareCenter, num_selected, gridSize, allocator);
 
             // path assignment
             var idx: usize = 0;
@@ -202,7 +203,7 @@ pub fn main() !void {
             const map_alloc = arena.allocator();
 
             var occupiedMap = std.AutoHashMap(ScreenPos, std.AutoHashMap(i32, void)).init(map_alloc);
-            var finalPositions = std.AutoHashMap(ScreenPos, pathfinding.FinalPosition).init(map_alloc);
+            var finalPositions = std.AutoHashMap(ScreenPos, global_planner.FinalPosition).init(map_alloc);
 
             for (agents.items) |*agent| {
                 if (agent.selected) {
@@ -214,7 +215,7 @@ pub fn main() !void {
                     var maxPathLen: usize = @intCast(@divTrunc(screenHeight, gridSize) + @divTrunc(screenWidth, gridSize));
                     maxPathLen *= 2; // hotfix, I thought previous was a good enough bound
 
-                    agent.path = pathfinding.getPathAstar(agentPosCenter, goal, gridSize, &pathfinding.crossDiagonalMovement, &obstacleGrid, allocator, maxPathLen, occupiedMap, finalPositions) catch null;
+                    agent.path = global_planner.getPathAstar(agentPosCenter, goal, gridSize, &global_planner.crossDiagonalMovement, &obstacleGrid, allocator, maxPathLen, occupiedMap, finalPositions) catch null;
                     if (agent.path) |*p| {
                         var node_idx: i32 = 0;
                         // bug with end of paths
@@ -233,7 +234,7 @@ pub fn main() !void {
                         if (p.items.len > 0) {
                             const final_pos = p.items[p.items.len - 1];
                             const arrival_time: i32 = @intCast(p.items.len - 1);
-                            try finalPositions.put(final_pos, pathfinding.FinalPosition{ .arrival_time = arrival_time });
+                            try finalPositions.put(final_pos, global_planner.FinalPosition{ .arrival_time = arrival_time });
                         }
 
                         if (p.items.len > 0) _ = p.orderedRemove(0);
@@ -256,58 +257,7 @@ pub fn main() !void {
         const deltaTime = rl.GetFrameTime();
 
         // path following code
-        for (agents.items) |*agent| {
-            if (agent.path) |*p| {
-                if (p.items.len > 0) {
-                    const nextPoint = p.items[0];
-                    const dx: f32 = @floatFromInt(nextPoint.x - agent.pos.x);
-                    const dy: f32 = @floatFromInt(nextPoint.y - agent.pos.y);
-                    const distance = std.math.sqrt(dx * dx + dy * dy);
-
-                    if (distance > 0) {
-                        const moveAmount = agentSpeed * deltaTime;
-                        if (moveAmount >= distance) {
-                            agent.pos = nextPoint;
-                            _ = p.orderedRemove(0);
-                            if (p.items.len == 0) {
-                                p.deinit(allocator);
-                                agent.path = null;
-                            }
-                        } else {
-                            const ratio = moveAmount / distance;
-                            const next_pos_x = agent.pos.x + @as(i32, @intFromFloat(dx * ratio));
-                            const next_pos_y = agent.pos.y + @as(i32, @intFromFloat(dy * ratio));
-
-                            const safeDistance = 2 * moveAmount;
-
-                            // check if other agent is there
-                            var tooClose = false;
-                            for (agents.items) |*other_agent| {
-                                if (other_agent != agent) {
-                                    const agent_dx: f32 = @floatFromInt(other_agent.pos.x - agent.pos.x);
-                                    const agent_dy: f32 = @floatFromInt(other_agent.pos.y - agent.pos.y);
-                                    const agent_distance = std.math.sqrt(agent_dx * agent_dx + agent_dy * agent_dy);
-
-                                    // deadlock
-                                    if (agent_distance <= safeDistance) {
-                                        tooClose = true;
-                                    }
-                                }
-                            }
-
-                            // if so, wait
-                            // need to refine this local planner
-                            // if (tooClose) {
-                            //     continue;
-                            // }
-
-                            agent.pos.x = next_pos_x;
-                            agent.pos.y = next_pos_y;
-                        }
-                    }
-                }
-            }
-        }
+        local_planner.plan_agents(&agents, agentSpeed, deltaTime, local_planner.basic_planner, allocator);
 
         grid.printGrid(gridSize, 0, @max(screenWidth, screenHeight));
 
@@ -316,7 +266,7 @@ pub fn main() !void {
 
         for (agents.items) |agent| {
             if (agent.path) |*p| {
-                pathfinding.drawPathLines(p.items);
+                global_planner.drawPathLines(p.items);
             }
         }
 

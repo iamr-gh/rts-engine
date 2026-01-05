@@ -1,8 +1,6 @@
 const std = @import("std");
 const types = @import("types.zig");
 const grid = @import("map/grid.zig");
-const map = @import("map/map.zig");
-const pathfinding = @import("pathfinding.zig");
 const rl = grid.rl;
 
 pub const Box = struct {
