@@ -194,9 +194,6 @@ pub fn main() !void {
             // goal allocation
             const goals = try global_planner.getGroupGoals(&obstacleGrid, goalSquareCenter, num_selected, gridSize, allocator);
 
-            // path assignment
-            var idx: usize = 0;
-
             // could switch everything to arena allocators eventually
             var arena = std.heap.ArenaAllocator.init(allocator);
             defer arena.deinit();
@@ -205,6 +202,8 @@ pub fn main() !void {
             var occupiedMap = std.AutoHashMap(ScreenPos, std.AutoHashMap(i32, void)).init(map_alloc);
             var finalPositions = std.AutoHashMap(ScreenPos, global_planner.FinalPosition).init(map_alloc);
 
+            // path assignment
+            var idx: usize = 0;
             for (agents.items) |*agent| {
                 if (agent.selected) {
                     if (agent.path) |*p| p.deinit(allocator);
