@@ -80,9 +80,12 @@ pub fn basic_planner(
     }
 }
 
+// oh these things are going to need memory...
 pub fn momentum_planner(
+    momentum: f32,
     info: local_info,
 ) void {
+    _ = momentum;
     const agent = &info.agents.items[info.agent_idx];
     if (agent.path) |*p| {
         if (p.items.len > 0) {

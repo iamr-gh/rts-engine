@@ -89,7 +89,8 @@ fn partialType(comptime args: type, comptime f: type) type {
     return @Type(f_info);
 }
 
-pub fn partial(comptime args: anytype, comptime f: anytype) partialType(@TypeOf(args), @TypeOf(f)) {
+// probably a bad pattern, but fun
+pub fn partial(args: anytype, comptime f: anytype) partialType(@TypeOf(args), @TypeOf(f)) {
     const out_t = partialType(@TypeOf(args), @TypeOf(f));
     return makeFunc(out_t, f, args);
 }

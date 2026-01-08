@@ -256,7 +256,10 @@ pub fn main() !void {
         const deltaTime = rl.GetFrameTime();
 
         // path following code
-        local_planner.plan_agents(&agents, agentSpeed, deltaTime, local_planner.basic_planner, allocator);
+        const ctx: f32 = 10.0;
+        const planner = utils.partial(.{ctx}, local_planner.momentum_planner);
+
+        local_planner.plan_agents(&agents, agentSpeed, deltaTime, planner, allocator);
 
         grid.printGrid(gridSize, 0, @max(screenWidth, screenHeight));
 
