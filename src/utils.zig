@@ -26,7 +26,7 @@ fn concatType(comptime T1: type, comptime T2: type) type {
     return std.meta.Tuple(&types);
 }
 
-fn makeFunc(comptime T: type, comptime f: anytype, comptime provided: anytype) T {
+fn makeFunc(comptime T: type, comptime f: anytype, provided: anytype) T {
     const info = @typeInfo(T);
     const Fn = info.@"fn";
     const params = Fn.params;

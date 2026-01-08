@@ -82,10 +82,10 @@ pub fn basic_planner(
 
 // oh these things are going to need memory...
 pub fn momentum_planner(
-    momentum: f32,
+    momentum_val: f32,
+    momentum_memory: *[2]f32,
     info: local_info,
 ) void {
-    _ = momentum;
     const agent = &info.agents.items[info.agent_idx];
     if (agent.path) |*p| {
         if (p.items.len > 0) {
@@ -105,25 +105,15 @@ pub fn momentum_planner(
                     }
                 } else {
                     const ratio = moveAmount / distance;
-                    const next_pos_x = agent.pos.x + @as(i32, @intFromFloat(dx * ratio));
-                    const next_pos_y = agent.pos.y + @as(i32, @intFromFloat(dy * ratio));
+                    std.debug.print("movmentum adjust vector {}, {}\n", .{ momentum_memory[0] * momentum_val, momentum_memory[1] * momentum_val });
+                    const next_pos_x = agent.pos.x + @as(i32, @intFromFloat(dx * ratio)) + @as(i32, @intFromFloat(momentum_memory[0] * momentum_val));
+                    const next_pos_y = agent.pos.y + @as(i32, @intFromFloat(dy * ratio)) + @as(i32, @intFromFloat(momentum_memory[1] * momentum_val));
 
-                    const safeDistance = 2 * moveAmount;
+                    momentum_memory[0] = @floatFromInt(next_pos_x - agent.pos.x);
+                    momentum_memory[1] = @floatFromInt(next_pos_y - agent.pos.y);
 
-                    // check if other agent is there
-                    var tooClose = false;
-                    for (info.agents.items) |*other_agent| {
-                        if (other_agent != agent) {
-                            const agent_dx: f32 = @floatFromInt(other_agent.pos.x - agent.pos.x);
-                            const agent_dy: f32 = @floatFromInt(other_agent.pos.y - agent.pos.y);
-                            const agent_distance = std.math.sqrt(agent_dx * agent_dx + agent_dy * agent_dy);
-
-                            // deadlock
-                            if (agent_distance <= safeDistance) {
-                                tooClose = true;
-                            }
-                        }
-                    }
+                    std.debug.print("agent {} at {}, {} at {}\n", .{ agent.pos.x, agent.pos.y, next_pos_x, next_pos_y });
+                    std.debug.print("momentum {}, {}\n", .{ momentum_memory[0], momentum_memory[1] });
 
                     agent.pos.x = next_pos_x;
                     agent.pos.y = next_pos_y;

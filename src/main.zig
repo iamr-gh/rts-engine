@@ -14,6 +14,8 @@ const Agent = types.Agent;
 
 const AGENT_RADIUS: f32 = 8.0;
 const CLICK_THRESHOLD: f32 = 10.0;
+const momentum: f32 = 0.85;
+var momentum_memory: [2]f32 = [_]f32{ 0, 0 };
 
 fn isAgentClicked(agentPos: ScreenPos, mousePos: ScreenPos) bool {
     const dx: f32 = @floatFromInt(agentPos.x - mousePos.x);
@@ -256,8 +258,9 @@ pub fn main() !void {
         const deltaTime = rl.GetFrameTime();
 
         // path following code
-        const ctx: f32 = 10.0;
-        const planner = utils.partial(.{ctx}, local_planner.momentum_planner);
+        // eventually need to put these globals somewhere
+
+        const planner = utils.partial(.{ momentum, &momentum_memory }, local_planner.momentum_planner);
 
         local_planner.plan_agents(&agents, agentSpeed, deltaTime, planner, allocator);
 
