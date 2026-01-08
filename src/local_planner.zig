@@ -106,6 +106,8 @@ pub fn momentum_planner(
                 } else {
                     const ratio = moveAmount / distance;
                     std.debug.print("movmentum adjust vector {}, {}\n", .{ momentum_memory[0] * momentum_val, momentum_memory[1] * momentum_val });
+
+                    // freezing issue needs to be fixed, this is also kind of a bad way to do this
                     const next_pos_x = agent.pos.x + @as(i32, @intFromFloat(dx * ratio)) + @as(i32, @intFromFloat(momentum_memory[0] * momentum_val));
                     const next_pos_y = agent.pos.y + @as(i32, @intFromFloat(dy * ratio)) + @as(i32, @intFromFloat(momentum_memory[1] * momentum_val));
 
