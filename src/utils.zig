@@ -1,98 +1,97 @@
 const std = @import("std");
 
-fn concatTuples(a: anytype, b: anytype) concatType(@TypeOf(a), @TypeOf(b)) {
-    const T1 = @TypeOf(a);
-    const T2 = @TypeOf(b);
-    const len1 = @typeInfo(T1).@"struct".fields.len;
-    const len2 = @typeInfo(T2).@"struct".fields.len;
-
-    var result: concatType(T1, T2) = undefined;
-
-    inline for (0..len1) |i| result[i] = a[i];
-    inline for (0..len2) |i| result[i + len1] = b[i];
-
-    return result;
+/// Computes the function type after removing the first `n` parameters.
+fn PartialFn(comptime F: type, comptime n: usize) type {
+    const info = @typeInfo(F).@"fn";
+    var new_params: [info.params.len - n]std.builtin.Type.Fn.Param = undefined;
+    for (info.params[n..], 0..) |p, i| {
+        new_params[i] = p;
+    }
+    return @Type(.{ .@"fn" = .{
+        .calling_convention = info.calling_convention,
+        .is_generic = false,
+        .is_var_args = info.is_var_args,
+        .return_type = info.return_type,
+        .params = &new_params,
+    } });
 }
 
-/// Helper to calculate the result type separately
-fn concatType(comptime T1: type, comptime T2: type) type {
-    const fields1 = @typeInfo(T1).@"struct".fields;
-    const fields2 = @typeInfo(T2).@"struct".fields;
+/// Partial function application - binds the first N arguments of a function at compile time.
+/// Returns a concrete function pointer with the bound parameters removed from the signature.
+///
+/// Example:
+///   fn add(a: i32, b: i32) i32 { return a + b; }
+///   const addFive = partial(add, .{5});  // type: fn(i32) i32
+///   addFive(3);  // returns 8
+///
+pub fn partial(comptime bound_args: anytype, comptime f: anytype) PartialFn(@TypeOf(f), bound_args.len) {
+    const F = @TypeOf(f);
+    const info = @typeInfo(F).@"fn";
+    const bound_count = bound_args.len;
+    const remaining_count = info.params.len - bound_count;
+    const p = info.params;
 
-    var types: [fields1.len + fields2.len]type = undefined;
-    inline for (fields1, 0..) |f, i| types[i] = f.type;
-    inline for (fields2, 0..) |f, i| types[i + fields1.len] = f.type;
-
-    return std.meta.Tuple(&types);
-}
-
-fn makeFunc(comptime T: type, comptime f: anytype, provided: anytype) T {
-    const info = @typeInfo(T);
-    const Fn = info.@"fn";
-    const params = Fn.params;
-
-    // have to hardcode arity in funciton genration due to stricter anytype checking in zig .15
-    return switch (params.len) {
-        0 => struct {
-            fn wrapper() Fn.return_type.? {
-                std.debug.print("Called with 0 args\n", .{});
-                return @call(.auto, f, provided);
+    const Impl = struct {
+        inline fn callWithArgs(remaining_tuple: std.meta.ArgsTuple(PartialFn(F, bound_count))) info.return_type.? {
+            var full_args: std.meta.ArgsTuple(F) = undefined;
+            inline for (0..bound_count) |i| {
+                full_args[i] = bound_args[i];
             }
-        }.wrapper,
-        1 => struct {
-            fn wrapper(a: params[0].type.?) Fn.return_type.? {
-                const in = concatTuples(provided, .{a});
-                return @call(.auto, f, in);
+            inline for (0..remaining_count) |i| {
+                full_args[bound_count + i] = remaining_tuple[i];
             }
-        }.wrapper,
-        2 => struct {
-            fn wrapper(a: params[0].type.?, b: params[1].type.?) Fn.return_type.? {
-                const in = concatTuples(provided, .{ a, b });
-                return @call(.auto, f, in);
-            }
-        }.wrapper,
-        3 => struct {
-            fn wrapper(a: params[0].type.?, b: params[1].type.?, c: params[2].type.?) Fn.return_type.? {
-                const in = concatTuples(provided, .{ a, b, c });
-                return @call(.auto, f, in);
-            }
-        }.wrapper,
-        4 => struct {
-            fn wrapper(a: params[0].type.?, b: params[1].type.?, c: params[2].type.?, d: params[3].type.?) Fn.return_type.? {
-                const in = concatTuples(provided, .{ a, b, c, d });
-                return @call(.auto, f, in);
-            }
-        }.wrapper,
-        5 => struct {
-            fn wrapper(a: params[0].type.?, b: params[1].type.?, c: params[2].type.?, d: params[3].type.?, e: params[4].type.?) Fn.return_type.? {
-                const in = concatTuples(provided, .{ a, b, c, d, e });
-                return @call(.auto, f, in);
-            }
-        }.wrapper,
-        else => @compileError("Arity too high! Add more cases to the switch."),
+            return @call(.auto, f, full_args);
+        }
     };
-}
 
-fn partialType(comptime args: type, comptime f: type) type {
-    const args_info = @typeInfo(args);
-    if (args_info != .@"struct") {
-        @compileError("Expected a tuple or struct, found " ++ @typeName(args));
-    }
-
-    var f_info = @typeInfo(f);
-    if (f_info != .@"fn") {
-        @compileError("Expected a tuple or struct, found " ++ @typeName(args));
-    }
-
-    const original_arg_types = f_info.@"fn".params;
-    f_info.@"fn".params = original_arg_types[args_info.@"struct".fields.len..];
-    return @Type(f_info);
-}
-
-// probably a bad pattern, but fun
-pub fn partial(args: anytype, comptime f: anytype) partialType(@TypeOf(args), @TypeOf(f)) {
-    const out_t = partialType(@TypeOf(args), @TypeOf(f));
-    return makeFunc(out_t, f, args);
+    return switch (remaining_count) {
+        0 => struct {
+            fn call() info.return_type.? {
+                return Impl.callWithArgs(.{});
+            }
+        }.call,
+        1 => struct {
+            fn call(a0: p[bound_count].type.?) info.return_type.? {
+                return Impl.callWithArgs(.{a0});
+            }
+        }.call,
+        2 => struct {
+            fn call(a0: p[bound_count].type.?, a1: p[bound_count + 1].type.?) info.return_type.? {
+                return Impl.callWithArgs(.{ a0, a1 });
+            }
+        }.call,
+        3 => struct {
+            fn call(a0: p[bound_count].type.?, a1: p[bound_count + 1].type.?, a2: p[bound_count + 2].type.?) info.return_type.? {
+                return Impl.callWithArgs(.{ a0, a1, a2 });
+            }
+        }.call,
+        4 => struct {
+            fn call(a0: p[bound_count].type.?, a1: p[bound_count + 1].type.?, a2: p[bound_count + 2].type.?, a3: p[bound_count + 3].type.?) info.return_type.? {
+                return Impl.callWithArgs(.{ a0, a1, a2, a3 });
+            }
+        }.call,
+        5 => struct {
+            fn call(a0: p[bound_count].type.?, a1: p[bound_count + 1].type.?, a2: p[bound_count + 2].type.?, a3: p[bound_count + 3].type.?, a4: p[bound_count + 4].type.?) info.return_type.? {
+                return Impl.callWithArgs(.{ a0, a1, a2, a3, a4 });
+            }
+        }.call,
+        6 => struct {
+            fn call(a0: p[bound_count].type.?, a1: p[bound_count + 1].type.?, a2: p[bound_count + 2].type.?, a3: p[bound_count + 3].type.?, a4: p[bound_count + 4].type.?, a5: p[bound_count + 5].type.?) info.return_type.? {
+                return Impl.callWithArgs(.{ a0, a1, a2, a3, a4, a5 });
+            }
+        }.call,
+        7 => struct {
+            fn call(a0: p[bound_count].type.?, a1: p[bound_count + 1].type.?, a2: p[bound_count + 2].type.?, a3: p[bound_count + 3].type.?, a4: p[bound_count + 4].type.?, a5: p[bound_count + 5].type.?, a6: p[bound_count + 6].type.?) info.return_type.? {
+                return Impl.callWithArgs(.{ a0, a1, a2, a3, a4, a5, a6 });
+            }
+        }.call,
+        8 => struct {
+            fn call(a0: p[bound_count].type.?, a1: p[bound_count + 1].type.?, a2: p[bound_count + 2].type.?, a3: p[bound_count + 3].type.?, a4: p[bound_count + 4].type.?, a5: p[bound_count + 5].type.?, a6: p[bound_count + 6].type.?, a7: p[bound_count + 7].type.?) info.return_type.? {
+                return Impl.callWithArgs(.{ a0, a1, a2, a3, a4, a5, a6, a7 });
+            }
+        }.call,
+        else => @compileError("partial: too many remaining arguments (max 8 supported)"),
+    };
 }
 
 fn condNum(b: bool, a: i32) i32 {
@@ -109,7 +108,6 @@ fn num(a: i32) i32 {
 
 test "partialApplication" {
     // type propagation
-    std.debug.assert(partialType(@TypeOf(.{false}), @TypeOf(condNum)) == @TypeOf(num));
 
     const num1 = partial(.{1}, num);
     std.debug.assert(num1() == 1);

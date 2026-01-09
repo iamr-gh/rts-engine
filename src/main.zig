@@ -14,7 +14,7 @@ const Agent = types.Agent;
 
 const AGENT_RADIUS: f32 = 8.0;
 const CLICK_THRESHOLD: f32 = 10.0;
-const momentum: f32 = 0.9;
+const momentum: f32 = 0;
 var momentum_memory: [2]f32 = [_]f32{ 0, 0 };
 
 fn isAgentClicked(agentPos: ScreenPos, mousePos: ScreenPos) bool {
